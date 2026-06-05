@@ -1,0 +1,6 @@
+@Neuro_HostAddress = http://localhost:5262
+
+GET {{Neuro_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

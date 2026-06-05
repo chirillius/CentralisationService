@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/CentralServer/">
+    <Project Path="CentralServer/CentralServer/CentralServer.csproj" />
+  </Folder>
+  <Folder Name="/Neuro/">
+    <Project Path="Neuro/Neuro/Neuro.csproj" />
+  </Folder>
+  <Folder Name="/Server/">
+    <Project Path="Server/Server/Server.csproj" />
+  </Folder>
+</Solution>

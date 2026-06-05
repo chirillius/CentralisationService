@@ -1,0 +1,44 @@
+[
+  {
+    "profileKey": "sve-svoboda-client-presence-test",
+    "name": "Client presence test snapshot",
+    "cameraKey": "sve-svoboda:front",
+    "detectionTypeKey": "client-presence-test",
+    "isEnabled": true,
+    "clientZoneTypeKey": "client-zone",
+    "targetZoneTypeKey": null,
+    "requiresClientZonePresence": false,
+    "saveEvidenceOnPositiveResult": true,
+    "intervalSeconds": 5,
+    "cooldownSeconds": 20,
+    "confidenceThreshold": 0.20
+  },
+  {
+    "profileKey": "sve-svoboda-phone-when-client-present",
+    "name": "Phone when client present",
+    "cameraKey": "sve-svoboda:front",
+    "detectionTypeKey": "phone",
+    "isEnabled": true,
+    "clientZoneTypeKey": "client-zone",
+    "targetZoneTypeKey": "phone-zone",
+    "requiresClientZonePresence": true,
+    "saveEvidenceOnPositiveResult": true,
+    "intervalSeconds": 5,
+    "cooldownSeconds": 30,
+    "confidenceThreshold": 0.40
+  },
+  {
+    "profileKey": "sve-svoboda-bottles-when-client-present",
+    "name": "Bottles when client present",
+    "cameraKey": "sve-svoboda:front",
+    "detectionTypeKey": "bottles",
+    "isEnabled": true,
+    "clientZoneTypeKey": "client-zone",
+    "targetZoneTypeKey": "bottles-zone",
+    "requiresClientZonePresence": true,
+    "saveEvidenceOnPositiveResult": true,
+    "intervalSeconds": 5,
+    "cooldownSeconds": 30,
+    "confidenceThreshold": 0.40
+  }
+]
