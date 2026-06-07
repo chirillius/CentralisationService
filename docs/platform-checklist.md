@@ -9,6 +9,7 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 ### CentralServer
 
 - Owns centralized processing according to `docs/processing-rule.md`.
+- Has a target PostgreSQL schema for platform, access, catalog, detection, incidents, archive, audit, and operational telemetry.
 - Polls site-side `Server` instances and builds a central store/camera catalog.
 - Supports legacy configured stores from `appsettings.json`.
 - Supports dynamic company-site bindings from `Configuration/access/company-sites.json`.
@@ -156,8 +157,8 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 
 ### Platform And Data Storage
 
-- Move JSON-backed access/catalog/configuration storage to PostgreSQL.
-- Define database migrations and schema ownership.
+- Connect CentralServer runtime services to PostgreSQL.
+- Add an automated migration from JSON files to PostgreSQL.
 - Decide whether company isolation is by `company_id`, PostgreSQL schema, or separate DB for large customers.
 - Move platform admin credentials from `appsettings.json` to environment variables, secret storage, or database users.
 - Add token rotation for site-side connector tokens.
@@ -270,3 +271,5 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Added platform-admin zone CRUD endpoints.
 - Added zone markup from admin selected site settings.
 - Added admin UI user details dialog with access actions and password reset.
+- Added target PostgreSQL architecture document and initial SQL schema files.
+- Added PostgreSQL seed data for company roles, permissions, zone name templates, and detection types.
