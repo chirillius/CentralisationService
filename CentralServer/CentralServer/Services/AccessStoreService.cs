@@ -345,6 +345,17 @@ public sealed class AccessStoreService
         };
     }
 
+    public async Task<bool> DeleteCompanyAsync(Guid companyId, CancellationToken cancellationToken)
+    {
+        await EnsureSeededAsync(cancellationToken);
+        const string sql = "DELETE FROM platform.companies WHERE id = @id;";
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("id", companyId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     public async Task<(CompanyInvitation Invitation, string Token)> CreateInvitationAsync(
         Guid companyId,
         CreateInvitationRequest request,

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using CentralServer.Models;
 using CentralServer.Services;
 
@@ -11,7 +13,10 @@ builder.Services.Configure<RetailDetectionMonitoringOptions>(builder.Configurati
 builder.Services.Configure<AccessOptions>(builder.Configuration.GetSection("Access"));
 builder.Services.Configure<PostgreSqlOptions>(builder.Configuration.GetSection("PostgreSql"));
 builder.Services.AddOpenApi();
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+});
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddCors(options =>
 {

@@ -4,6 +4,7 @@ import CameraAltRoundedIcon from '@mui/icons-material/CameraAltRounded';
 import CircleRoundedIcon from '@mui/icons-material/CircleRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
+import DeleteRoundedIcon from '@mui/icons-material/DeleteRounded';
 import KeyRoundedIcon from '@mui/icons-material/KeyRounded';
 import LockResetRoundedIcon from '@mui/icons-material/LockResetRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
@@ -52,6 +53,33 @@ const STATUS_LABELS: Record<CompanyAccessDto['status'], string> = {
   archived: 'Архив',
 };
 
+const COMPANY_STATUS_META: Record<CompanyAccessDto['status'], {
+  label: string;
+  description: string;
+  color: 'success' | 'warning' | 'error' | 'default';
+}> = {
+  active: {
+    label: 'Компания включена',
+    description: 'Пользователи могут входить, точки синхронизируются.',
+    color: 'success',
+  },
+  suspended: {
+    label: 'Компания приостановлена',
+    description: 'Доступ временно остановлен, точки не синхронизируются.',
+    color: 'warning',
+  },
+  disabled: {
+    label: 'Компания выключена',
+    description: 'Доступ заблокирован, активные сессии закрыты.',
+    color: 'error',
+  },
+  archived: {
+    label: 'Компания в архиве',
+    description: 'Компания скрыта из рабочего использования.',
+    color: 'default',
+  },
+};
+
 const ROLE_LABELS: Record<string, string> = {
   'company-admin': 'Администратор',
   'company-operator': 'Оператор',
@@ -66,6 +94,13 @@ const ACCOUNT_STATUS_LABELS: Record<CompanyAccountDto['status'], string> = {
 const toInputDateTime = (value: string | null) => (value ? value.slice(0, 16) : '');
 const toUtcIsoOrNull = (value: string) => (value ? new Date(value).toISOString() : null);
 const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString('ru-RU') : 'Без срока');
+const normalizeCompanyStatus = (status: CompanyAccessDto['status'] | number | string): CompanyAccessDto['status'] => {
+  if (typeof status === 'number') {
+    return (['active', 'suspended', 'disabled', 'archived'][status] ?? 'disabled') as CompanyAccessDto['status'];
+  }
+
+  return (['active', 'suspended', 'disabled', 'archived'].includes(status) ? status : 'disabled') as CompanyAccessDto['status'];
+};
 
 const AdminPage = () => {
   const navigate = useNavigate();
@@ -134,7 +169,10 @@ const AdminPage = () => {
       if (!response.ok) {
         throw new Error(`Центральный сервер вернул ошибку ${response.status}.`);
       }
-      const data = (await response.json()) as CompanyAccessDto[];
+      const data = ((await response.json()) as CompanyAccessDto[]).map((company) => ({
+        ...company,
+        status: normalizeCompanyStatus(company.status),
+      }));
       setCompanies(data);
       setAccessExpirationByCompany(
         data.reduce<Record<string, string>>((accumulator, company) => {
@@ -223,6 +261,34 @@ const AdminPage = () => {
       return;
     }
     showSnackbar(status === 'active' ? 'Компания включена.' : 'Доступ компании изменён.');
+    await loadCompanies();
+  };
+
+  const deleteCompany = async (company: CompanyAccessDto) => {
+    const confirmed = window.confirm(
+      `Удалить компанию "${company.name}"?\n\nБудут удалены её точки, пользователи, приглашения, зоны и связанные настройки. Это действие нельзя отменить.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await platformAuthorizedFetch(`${baseUrl}/api/platform/companies/${company.id}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      showAlert('Ошибка', `Не удалось удалить компанию. Центральный сервер вернул ошибку ${response.status}.`);
+      return;
+    }
+
+    if (selectedCompanyId === company.id) {
+      setSelectedCompanyId(null);
+      setSites([]);
+      setAccounts([]);
+      setInvitations([]);
+      setSelectedSiteKey(null);
+      setSelectedAccount(null);
+    }
+    showSnackbar('Компания удалена.');
     await loadCompanies();
   };
 
@@ -440,32 +506,49 @@ const AdminPage = () => {
                 {isLoading ? <Chip label="Загрузка..." color="info" variant="outlined" /> : null}
               </Stack>
               <Stack spacing={1.5}>
-                {companies.map((company) => (
-                  <Box key={company.id} onClick={() => openCompany(company)} sx={{ p: 1.8, borderRadius: UI_RADIUS_PX, border: '1px solid rgba(148,163,184,0.16)', background: 'rgba(15,23,42,0.58)', cursor: 'pointer', '&:hover': { borderColor: 'rgba(96,165,250,0.46)', transform: 'translateY(-1px)' } }}>
-                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between">
-                      <Box>
-                        <Typography sx={{ fontWeight: 850, fontSize: '1.05rem' }}>{company.name}</Typography>
-                        <Typography variant="body2" color="text.secondary">{company.key}</Typography>
-                      </Box>
-                      <Chip label={STATUS_LABELS[company.status] ?? company.status} color={company.status === 'active' ? 'success' : 'warning'} variant="outlined" />
-                    </Stack>
-                    <Divider sx={{ my: 1.5 }} />
-                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', md: 'center' }} onClick={(event) => event.stopPropagation()}>
-                      <TextField
-                        label="Доступ компании до"
-                        type="datetime-local"
-                        size="small"
-                        value={accessExpirationByCompany[company.id] ?? ''}
-                        onChange={(event) => setAccessExpirationByCompany((current) => ({ ...current, [company.id]: event.target.value }))}
-                        InputLabelProps={{ shrink: true }}
-                        sx={{ minWidth: { md: 250 } }}
-                      />
-                      <Button variant="outlined" onClick={() => void updateCompanyAccess(company, 'active')}>Включить</Button>
-                      <Button color="warning" variant="outlined" onClick={() => void updateCompanyAccess(company, 'suspended')}>Приостановить</Button>
-                      <Button color="error" variant="outlined" onClick={() => void updateCompanyAccess(company, 'disabled')}>Отключить</Button>
-                    </Stack>
-                  </Box>
-                ))}
+                {companies.map((company) => {
+                  const status = normalizeCompanyStatus(company.status);
+                  const statusMeta = COMPANY_STATUS_META[status];
+
+                  return (
+                    <Box key={company.id} onClick={() => openCompany(company)} sx={{ p: 1.8, borderRadius: UI_RADIUS_PX, border: '1px solid rgba(148,163,184,0.16)', background: 'rgba(15,23,42,0.58)', cursor: 'pointer', '&:hover': { borderColor: 'rgba(96,165,250,0.46)', transform: 'translateY(-1px)' } }}>
+                      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between">
+                        <Box>
+                          <Typography sx={{ fontWeight: 850, fontSize: '1.05rem' }}>{company.name}</Typography>
+                          <Typography variant="body2" color="text.secondary">{company.key}</Typography>
+                        </Box>
+                        <Stack spacing={0.75} alignItems={{ xs: 'flex-start', md: 'flex-end' }}>
+                          <Chip label={statusMeta.label} color={statusMeta.color} variant="outlined" />
+                          <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 320, textAlign: { xs: 'left', md: 'right' } }}>
+                            {statusMeta.description}
+                          </Typography>
+                        </Stack>
+                      </Stack>
+                      <Stack direction="row" spacing={0.75} sx={{ mt: 1.4 }} flexWrap="wrap" useFlexGap>
+                        <Chip size="small" label={`Статус: ${STATUS_LABELS[status]}`} color={statusMeta.color} variant="outlined" />
+                        <Chip size="small" label={`Доступ до: ${formatDate(company.accessExpiresAtUtc)}`} variant="outlined" />
+                        {company.disabledAtUtc ? <Chip size="small" label={`Изменено: ${formatDate(company.disabledAtUtc)}`} color="warning" variant="outlined" /> : null}
+                        {company.disabledReason ? <Chip size="small" label={company.disabledReason} variant="outlined" /> : null}
+                      </Stack>
+                      <Divider sx={{ my: 1.5 }} />
+                      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25} alignItems={{ xs: 'stretch', md: 'center' }} onClick={(event) => event.stopPropagation()}>
+                        <TextField
+                          label="Доступ компании до"
+                          type="datetime-local"
+                          size="small"
+                          value={accessExpirationByCompany[company.id] ?? ''}
+                          onChange={(event) => setAccessExpirationByCompany((current) => ({ ...current, [company.id]: event.target.value }))}
+                          InputLabelProps={{ shrink: true }}
+                          sx={{ minWidth: { md: 250 } }}
+                        />
+                        <Button variant="outlined" onClick={() => void updateCompanyAccess(company, 'active')}>Включить</Button>
+                        <Button color="warning" variant="outlined" onClick={() => void updateCompanyAccess(company, 'suspended')}>Приостановить</Button>
+                        <Button color="error" variant="outlined" onClick={() => void updateCompanyAccess(company, 'disabled')}>Отключить</Button>
+                        <Button startIcon={<DeleteRoundedIcon />} color="error" variant="contained" onClick={() => void deleteCompany(company)}>Удалить</Button>
+                      </Stack>
+                    </Box>
+                  );
+                })}
                 {!isLoading && companies.length === 0 ? <Alert severity="info">Компаний пока нет. Создай первую компанию слева.</Alert> : null}
               </Stack>
             </Paper>
@@ -477,10 +560,21 @@ const AdminPage = () => {
                 Назад к компаниям
               </Button>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Chip label={STATUS_LABELS[selectedCompany.status]} color={selectedCompany.status === 'active' ? 'success' : 'warning'} variant="outlined" />
+                <Chip
+                  label={COMPANY_STATUS_META[normalizeCompanyStatus(selectedCompany.status)].label}
+                  color={COMPANY_STATUS_META[normalizeCompanyStatus(selectedCompany.status)].color}
+                  variant="outlined"
+                />
                 <Chip label={`Доступ: ${formatDate(selectedCompany.accessExpiresAtUtc)}`} variant="outlined" />
+                {selectedCompany.disabledAtUtc ? <Chip label={`Изменено: ${formatDate(selectedCompany.disabledAtUtc)}`} color="warning" variant="outlined" /> : null}
               </Stack>
             </Stack>
+            {normalizeCompanyStatus(selectedCompany.status) !== 'active' ? (
+              <Alert severity={normalizeCompanyStatus(selectedCompany.status) === 'disabled' ? 'error' : 'warning'}>
+                {COMPANY_STATUS_META[normalizeCompanyStatus(selectedCompany.status)].description}
+                {selectedCompany.disabledReason ? ` Причина: ${selectedCompany.disabledReason}.` : ''}
+              </Alert>
+            ) : null}
 
             <Paper sx={{ p: { xs: 2, md: 2.5 } }}>
               <Tabs value={tab} onChange={(_, value) => setTab(value)} sx={{ mb: 2 }}>

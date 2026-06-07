@@ -104,6 +104,25 @@ public sealed class PlatformCompaniesController : ControllerBase
         return Ok(updated);
     }
 
+    [HttpDelete("{companyId:guid}")]
+    public async Task<IActionResult> DeleteCompany(Guid companyId, CancellationToken cancellationToken)
+    {
+        if (!await IsPlatformAdminAsync(cancellationToken))
+        {
+            return Unauthorized(new { code = "platform_admin_required" });
+        }
+
+        var current = await _accessStoreService.GetCompanyAsync(companyId, cancellationToken);
+        if (current is null)
+        {
+            return NotFound(new { code = "company_not_found", message = "Компания не найдена." });
+        }
+
+        await _accessStoreService.RevokeCompanySessionsAsync(companyId, cancellationToken);
+        var deleted = await _accessStoreService.DeleteCompanyAsync(companyId, cancellationToken);
+        return deleted ? NoContent() : NotFound(new { code = "company_not_found", message = "Компания не найдена." });
+    }
+
     [HttpGet("{companyId:guid}/sites")]
     public async Task<IActionResult> GetSites(Guid companyId, CancellationToken cancellationToken)
     {
