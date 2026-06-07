@@ -154,6 +154,55 @@ public sealed class AccessStoreService
         .Where(site => site.CompanyId == companyId && site.DisabledAtUtc is null)
         .ToList();
 
+    public async Task<List<RemoteCameraState>> GetCompanyCamerasAsync(Guid companyId, CancellationToken cancellationToken)
+    {
+        await EnsureSeededAsync(cancellationToken);
+        const string sql = """
+            SELECT
+                company.key AS company_key,
+                site.key AS site_key,
+                site.name AS site_name,
+                camera.global_camera_key,
+                camera.source_camera_key,
+                camera.name AS camera_name,
+                server.base_url,
+                COALESCE(server.connector_access_token, '') AS connector_access_token,
+                COALESCE(camera.last_seen_at_utc, camera.updated_at_utc) AS last_sync_at_utc,
+                camera.is_enabled AND site.status = 'active' AND server.is_enabled AS is_available
+            FROM catalog.cameras camera
+            JOIN catalog.sites site ON site.id = camera.site_id
+            JOIN platform.companies company ON company.id = camera.company_id
+            JOIN catalog.server_nodes server ON server.id = camera.server_node_id
+            WHERE camera.company_id = @company_id
+            ORDER BY site.name, camera.name;
+            """;
+
+        var result = new List<RemoteCameraState>();
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("company_id", companyId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new RemoteCameraState
+            {
+                CompanyKey = reader.GetString(0),
+                SiteKey = reader.GetString(1),
+                SiteName = reader.GetString(2),
+                CameraKey = reader.GetString(3),
+                SourceCameraKey = reader.GetString(4),
+                CameraId = int.TryParse(reader.GetString(4), out var cameraId) ? cameraId : null,
+                CameraName = reader.GetString(5),
+                ServerBaseUrl = reader.GetString(6),
+                ConnectorAccessToken = reader.GetString(7),
+                LastSyncUtc = reader.GetDateTime(8),
+                IsAvailable = reader.GetBoolean(9),
+            });
+        }
+
+        return result;
+    }
+
     public async Task<CompanySiteBinding> UpsertCompanySiteAsync(CompanySiteBinding site, CancellationToken cancellationToken)
     {
         await EnsureSeededAsync(cancellationToken);

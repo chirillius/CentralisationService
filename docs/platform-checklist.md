@@ -283,3 +283,5 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Added admin UI user details dialog with access actions and password reset.
 - Added target PostgreSQL architecture document and initial SQL schema files.
 - Added PostgreSQL seed data for company roles, permissions, zone name templates, and detection types.
+- Made platform-admin company sites load from PostgreSQL first and use live Server sync only as availability/status overlay.
+- Added more specific admin UI diagnostics for failed company detail sections: points, users, or invitations.

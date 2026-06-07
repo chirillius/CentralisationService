@@ -155,8 +155,13 @@ const AdminPage = () => {
       platformAuthorizedFetch(`${baseUrl}/api/platform/companies/${companyId}/accounts`),
       platformAuthorizedFetch(`${baseUrl}/api/platform/companies/${companyId}/invitations`),
     ]);
-    if (!sitesResponse.ok || !accountsResponse.ok || !invitationsResponse.ok) {
-      throw new Error('Не удалось загрузить данные компании.');
+    const failedParts = [
+      !sitesResponse.ok ? `точки (${sitesResponse.status})` : null,
+      !accountsResponse.ok ? `пользователи (${accountsResponse.status})` : null,
+      !invitationsResponse.ok ? `приглашения (${invitationsResponse.status})` : null,
+    ].filter(Boolean);
+    if (failedParts.length > 0) {
+      throw new Error(`Не удалось загрузить данные компании: ${failedParts.join(', ')}.`);
     }
     const nextSites = (await sitesResponse.json()) as CompanySiteDto[];
     setSites(nextSites);

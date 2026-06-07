@@ -17,17 +17,20 @@ public sealed class PlatformCompaniesController : ControllerBase
     private readonly ServerRegistryService _registryService;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AccessOptions _options;
+    private readonly ILogger<PlatformCompaniesController> _logger;
 
     public PlatformCompaniesController(
         AccessStoreService accessStoreService,
         ServerRegistryService registryService,
         IHttpClientFactory httpClientFactory,
-        IOptions<AccessOptions> options)
+        IOptions<AccessOptions> options,
+        ILogger<PlatformCompaniesController> logger)
     {
         _accessStoreService = accessStoreService;
         _registryService = registryService;
         _httpClientFactory = httpClientFactory;
         _options = options.Value;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -114,25 +117,49 @@ public sealed class PlatformCompaniesController : ControllerBase
             return NotFound();
         }
 
-        await _registryService.RefreshAsync(cancellationToken);
-        return Ok(_registryService.GetServers(company.Key).Select(server => new
+        var persistedSites = await _accessStoreService.GetCompanySitesAsync(companyId, cancellationToken);
+        var persistedCameras = (await _accessStoreService.GetCompanyCamerasAsync(companyId, cancellationToken))
+            .GroupBy(camera => camera.SiteKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase);
+
+        try
         {
-            server.CompanyKey,
-            server.SiteKey,
-            server.SiteName,
-            server.ServerBaseUrl,
-            server.ConnectorId,
-            server.CleaningDay,
-            server.LastSyncUtc,
-            server.IsAvailable,
-            Cameras = server.Cameras.Select(camera => new
+            await _registryService.RefreshAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to refresh company {CompanyKey} sites before platform admin response.", company.Key);
+        }
+
+        var runtimeServers = _registryService.GetServers(company.Key)
+            .ToDictionary(server => server.SiteKey, StringComparer.OrdinalIgnoreCase);
+
+        return Ok(persistedSites.Select(site =>
+        {
+            runtimeServers.TryGetValue(site.SiteKey, out var runtimeServer);
+            IEnumerable<RemoteCameraState> cameras = runtimeServer?.Cameras.Count > 0
+                ? runtimeServer.Cameras
+                : persistedCameras.GetValueOrDefault(site.SiteKey) ?? [];
+
+            return new
             {
-                camera.CameraId,
-                camera.CameraKey,
-                camera.SourceCameraKey,
-                camera.CameraName,
-                camera.IsAvailable,
-            }),
+                site.CompanyKey,
+                site.SiteKey,
+                site.SiteName,
+                site.ServerBaseUrl,
+                ConnectorId = runtimeServer?.ConnectorId ?? site.SiteKey,
+                site.CleaningDay,
+                LastSyncUtc = runtimeServer?.LastSyncUtc,
+                IsAvailable = runtimeServer?.IsAvailable ?? false,
+                Cameras = cameras.Select(camera => new
+                {
+                    camera.CameraId,
+                    camera.CameraKey,
+                    camera.SourceCameraKey,
+                    camera.CameraName,
+                    IsAvailable = runtimeServer?.IsAvailable == true && camera.IsAvailable,
+                }),
+            };
         }));
     }
 
