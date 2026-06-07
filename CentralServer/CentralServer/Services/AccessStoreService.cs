@@ -617,20 +617,20 @@ public sealed class AccessStoreService
         const string sql = """
             SELECT
                 account.id,
-                grant.id,
+                access_grant.id,
                 account.login,
                 account.display_name,
                 role.key,
-                grant.status,
-                grant.expires_at_utc,
+                access_grant.status,
+                access_grant.expires_at_utc,
                 account.is_enabled,
                 account.created_at_utc,
                 account.last_login_at_utc,
                 account.last_login_ip::text
-            FROM access.company_access_grants grant
-            JOIN access.accounts account ON account.id = grant.account_id
-            JOIN access.roles role ON role.id = grant.role_id
-            WHERE grant.company_id = @company_id
+            FROM access.company_access_grants access_grant
+            JOIN access.accounts account ON account.id = access_grant.account_id
+            JOIN access.roles role ON role.id = access_grant.role_id
+            WHERE access_grant.company_id = @company_id
             ORDER BY account.login;
             """;
 
@@ -1195,11 +1195,11 @@ public sealed class AccessStoreService
     private async Task<CompanyAccessGrant?> GetActiveGrantByAccountAsync(Guid accountId, CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT grant.id, grant.company_id, grant.account_id, role.key, grant.status, grant.expires_at_utc, grant.created_at_utc
-            FROM access.company_access_grants grant
-            JOIN access.roles role ON role.id = grant.role_id
-            WHERE grant.account_id = @account_id AND grant.status = 'active'
-            ORDER BY grant.created_at_utc DESC
+            SELECT access_grant.id, access_grant.company_id, access_grant.account_id, role.key, access_grant.status, access_grant.expires_at_utc, access_grant.created_at_utc
+            FROM access.company_access_grants access_grant
+            JOIN access.roles role ON role.id = access_grant.role_id
+            WHERE access_grant.account_id = @account_id AND access_grant.status = 'active'
+            ORDER BY access_grant.created_at_utc DESC
             LIMIT 1;
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -1212,10 +1212,10 @@ public sealed class AccessStoreService
     private async Task<CompanyAccessGrant?> GetGrantByIdAsync(Guid id, CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT grant.id, grant.company_id, grant.account_id, role.key, grant.status, grant.expires_at_utc, grant.created_at_utc
-            FROM access.company_access_grants grant
-            JOIN access.roles role ON role.id = grant.role_id
-            WHERE grant.id = @id;
+            SELECT access_grant.id, access_grant.company_id, access_grant.account_id, role.key, access_grant.status, access_grant.expires_at_utc, access_grant.created_at_utc
+            FROM access.company_access_grants access_grant
+            JOIN access.roles role ON role.id = access_grant.role_id
+            WHERE access_grant.id = @id;
             """;
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
