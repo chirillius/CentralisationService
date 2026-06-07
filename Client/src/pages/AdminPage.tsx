@@ -2,9 +2,14 @@ import AddBusinessRoundedIcon from '@mui/icons-material/AddBusinessRounded';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import CameraAltRoundedIcon from '@mui/icons-material/CameraAltRounded';
 import CircleRoundedIcon from '@mui/icons-material/CircleRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import KeyRoundedIcon from '@mui/icons-material/KeyRounded';
+import LockResetRoundedIcon from '@mui/icons-material/LockResetRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
+import MapRoundedIcon from '@mui/icons-material/MapRounded';
+import PauseCircleOutlineRoundedIcon from '@mui/icons-material/PauseCircleOutlineRounded';
+import PlayCircleOutlineRoundedIcon from '@mui/icons-material/PlayCircleOutlineRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SecurityRoundedIcon from '@mui/icons-material/SecurityRounded';
 import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
@@ -14,7 +19,11 @@ import {
   Button,
   Chip,
   Divider,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   IconButton,
+  MenuItem,
   Paper,
   Stack,
   Tab,
@@ -24,9 +33,11 @@ import {
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import CentralZoneConfigurator from '../components/stores/CentralZoneConfigurator';
 import { useAppStore } from '../store';
 import { PAGE_CONTENT_MAX_WIDTH, UI_RADIUS_PX } from '../theme/designTokens';
 import type {
+  CameraDto,
   CompanyAccessDto,
   CompanyAccountDto,
   CompanyInvitationDto,
@@ -39,6 +50,17 @@ const STATUS_LABELS: Record<CompanyAccessDto['status'], string> = {
   suspended: 'Приостановлена',
   disabled: 'Отключена',
   archived: 'Архив',
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  'company-admin': 'Администратор',
+  'company-operator': 'Оператор',
+};
+
+const ACCOUNT_STATUS_LABELS: Record<CompanyAccountDto['status'], string> = {
+  active: 'Активен',
+  suspended: 'Приостановлен',
+  disabled: 'Заблокирован',
 };
 
 const toInputDateTime = (value: string | null) => (value ? value.slice(0, 16) : '');
@@ -63,9 +85,13 @@ const AdminPage = () => {
   const [siteKey, setSiteKey] = useState('');
   const [siteName, setSiteName] = useState('');
   const [invitationName, setInvitationName] = useState('Оператор точки');
+  const [invitationRoleKey, setInvitationRoleKey] = useState<'company-admin' | 'company-operator'>('company-operator');
   const [invitationExpiresAt, setInvitationExpiresAt] = useState('');
   const [lastInvitationToken, setLastInvitationToken] = useState<string | null>(null);
   const [accessExpirationByCompany, setAccessExpirationByCompany] = useState<Record<string, string>>({});
+  const [selectedAccount, setSelectedAccount] = useState<CompanyAccountDto | null>(null);
+  const [newAccountPassword, setNewAccountPassword] = useState('');
+  const [zoneSettingsOpen, setZoneSettingsOpen] = useState(false);
 
   const selectedCompany = useMemo(
     () => companies.find((company) => company.id === selectedCompanyId) ?? null,
@@ -83,6 +109,23 @@ const AdminPage = () => {
     () => invitations.filter((invitation) => invitation.isActive).length,
     [invitations],
   );
+  const selectedSiteCameras = useMemo<CameraDto[]>(() => {
+    if (!selectedSite) {
+      return [];
+    }
+
+    return selectedSite.cameras.map((camera) => ({
+      key: camera.cameraKey,
+      name: camera.cameraName,
+      siteKey: selectedSite.siteKey,
+      siteName: selectedSite.siteName,
+      cameraId: camera.cameraId,
+      sourceCameraKey: camera.sourceCameraKey,
+      serverBaseUrl: selectedSite.serverBaseUrl,
+      lastSyncUtc: selectedSite.lastSyncUtc,
+      isAvailable: camera.isAvailable,
+    }));
+  }, [selectedSite]);
 
   const loadCompanies = useCallback(async () => {
     setIsLoading(true);
@@ -213,7 +256,7 @@ const AdminPage = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: invitationName.trim() || 'Оператор точки',
-        roleKey: 'company-operator',
+        roleKey: invitationRoleKey,
         expiresAtUtc: toUtcIsoOrNull(invitationExpiresAt),
       }),
     });
@@ -250,6 +293,75 @@ const AdminPage = () => {
     showSnackbar('Токен скопирован.');
   };
 
+  const refreshSelectedAccount = async (accountId: string) => {
+    if (!selectedCompany) {
+      return null;
+    }
+
+    const response = await platformAuthorizedFetch(`${baseUrl}/api/platform/companies/${selectedCompany.id}/accounts/${accountId}`);
+    if (!response.ok) {
+      showAlert('Ошибка', `Не удалось загрузить пользователя. Код ошибки: ${response.status}.`);
+      return null;
+    }
+
+    const account = (await response.json()) as CompanyAccountDto;
+    setSelectedAccount(account);
+    return account;
+  };
+
+  const openAccount = async (account: CompanyAccountDto) => {
+    setSelectedAccount(account);
+    setNewAccountPassword('');
+    await refreshSelectedAccount(account.accountId);
+  };
+
+  const updateAccountAccess = async (status: CompanyAccountDto['status']) => {
+    if (!selectedCompany || !selectedAccount) {
+      return;
+    }
+
+    const response = await platformAuthorizedFetch(`${baseUrl}/api/platform/companies/${selectedCompany.id}/accounts/${selectedAccount.accountId}/access`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (!response.ok) {
+      showAlert('Ошибка', `Не удалось изменить доступ пользователя. Код ошибки: ${response.status}.`);
+      return;
+    }
+
+    const account = (await response.json()) as CompanyAccountDto;
+    setSelectedAccount(account);
+    showSnackbar(status === 'active' ? 'Доступ пользователя включён.' : 'Доступ пользователя изменён.');
+    await loadCompanyDetails(selectedCompany.id);
+  };
+
+  const changeAccountPassword = async () => {
+    if (!selectedCompany || !selectedAccount) {
+      return;
+    }
+    if (newAccountPassword.length < 8) {
+      showAlert('Проверь данные', 'Пароль должен содержать минимум восемь символов.');
+      return;
+    }
+
+    const response = await platformAuthorizedFetch(`${baseUrl}/api/platform/companies/${selectedCompany.id}/accounts/${selectedAccount.accountId}/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: newAccountPassword }),
+    });
+    if (!response.ok) {
+      showAlert('Ошибка', `Не удалось задать новый пароль. Код ошибки: ${response.status}.`);
+      return;
+    }
+
+    const account = (await response.json()) as CompanyAccountDto;
+    setSelectedAccount(account);
+    setNewAccountPassword('');
+    showSnackbar('Новый пароль задан. Активные сессии пользователя закрыты.');
+    await loadCompanyDetails(selectedCompany.id);
+  };
+
   const logout = () => {
     platformLogout();
     navigate('/login');
@@ -259,6 +371,8 @@ const AdminPage = () => {
     setSelectedCompanyId(company.id);
     setSelectedSiteKey(null);
     setLastInvitationToken(null);
+    setSelectedAccount(null);
+    setZoneSettingsOpen(false);
     setTab('sites');
   };
 
@@ -418,6 +532,14 @@ const AdminPage = () => {
                           <Chip label={`Последняя проверка: ${formatDate(selectedSite.lastSyncUtc)}`} variant="outlined" />
                         </Stack>
                         <Divider />
+                        <Button
+                          variant="contained"
+                          startIcon={<MapRoundedIcon />}
+                          onClick={() => setZoneSettingsOpen(true)}
+                          disabled={!selectedSite.isAvailable || selectedSite.cameras.length === 0}
+                        >
+                          Разметить зоны точки
+                        </Button>
                         <Box>
                           <Typography variant="h6" sx={{ fontWeight: 800, mb: 1.2 }}>Камеры</Typography>
                           <Stack spacing={1}>
@@ -437,9 +559,6 @@ const AdminPage = () => {
                             ))}
                           </Stack>
                         </Box>
-                        <Alert severity="info">
-                          Разметка зон для администратора будет открываться из этой карточки точки. Сейчас серверная привязка и статусность уже работают; следующий короткий шаг — вынести `ZonesController` в platform-admin режим, чтобы зона размечалась отсюда без входа под пользователем компании.
-                        </Alert>
                       </Stack>
                     ) : (
                       <Alert severity="info">Выбери точку слева, чтобы увидеть камеры и настройки.</Alert>
@@ -453,6 +572,10 @@ const AdminPage = () => {
                       <Typography variant="h6" sx={{ fontWeight: 800, mb: 1.5 }}>Выпустить приглашение</Typography>
                       <Stack spacing={1.4}>
                         <TextField label="Название приглашения" value={invitationName} onChange={(event) => setInvitationName(event.target.value)} />
+                        <TextField select label="Роль пользователя" value={invitationRoleKey} onChange={(event) => setInvitationRoleKey(event.target.value as 'company-admin' | 'company-operator')}>
+                          <MenuItem value="company-admin">Администратор</MenuItem>
+                          <MenuItem value="company-operator">Оператор</MenuItem>
+                        </TextField>
                         <TextField label="Срок действия" type="datetime-local" value={invitationExpiresAt} onChange={(event) => setInvitationExpiresAt(event.target.value)} InputLabelProps={{ shrink: true }} />
                         <Button startIcon={<KeyRoundedIcon />} variant="contained" onClick={() => void createInvitation()}>Выпустить токен</Button>
                         <Button color="warning" variant="outlined" onClick={() => void revokeActiveInvitations()}>Закрыть активные токены</Button>
@@ -475,13 +598,23 @@ const AdminPage = () => {
                       <Typography variant="h6" sx={{ fontWeight: 800, mb: 1.5 }}>Пользователи компании</Typography>
                       <Stack spacing={1}>
                         {accounts.map((account) => (
-                          <Box key={account.grantId} sx={{ p: 1.4, borderRadius: UI_RADIUS_PX, border: '1px solid rgba(148,163,184,0.16)' }}>
+                          <Box
+                            key={account.grantId}
+                            onClick={() => void openAccount(account)}
+                            sx={{
+                              p: 1.4,
+                              borderRadius: UI_RADIUS_PX,
+                              border: selectedAccount?.accountId === account.accountId ? '1px solid rgba(96,165,250,0.56)' : '1px solid rgba(148,163,184,0.16)',
+                              cursor: 'pointer',
+                              '&:hover': { borderColor: 'rgba(96,165,250,0.42)' },
+                            }}
+                          >
                             <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1}>
                               <Box>
                                 <Typography sx={{ fontWeight: 780 }}>{account.displayName || account.login}</Typography>
-                                <Typography variant="body2" color="text.secondary">{account.login} · {account.roleKey}</Typography>
+                                <Typography variant="body2" color="text.secondary">{account.login} · {ROLE_LABELS[account.roleKey] ?? account.roleKey}</Typography>
                               </Box>
-                              <Chip label={account.isEnabled ? 'Активен' : 'Отключён'} color={account.isEnabled ? 'success' : 'warning'} variant="outlined" />
+                              <Chip label={ACCOUNT_STATUS_LABELS[account.status] ?? account.status} color={account.status === 'active' ? 'success' : 'warning'} variant="outlined" />
                             </Stack>
                             <Typography variant="caption" color="text.secondary">Доступ до: {formatDate(account.accessExpiresAtUtc)}</Typography>
                           </Box>
@@ -498,7 +631,7 @@ const AdminPage = () => {
                             <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1}>
                               <Box>
                                 <Typography sx={{ fontWeight: 780 }}>{invitation.name}</Typography>
-                                <Typography variant="body2" color="text.secondary">{invitation.roleKey} · срок: {formatDate(invitation.expiresAtUtc)}</Typography>
+                                <Typography variant="body2" color="text.secondary">{ROLE_LABELS[invitation.roleKey] ?? invitation.roleKey} · срок: {formatDate(invitation.expiresAtUtc)}</Typography>
                               </Box>
                               <Chip label={invitation.isActive ? 'Активен' : invitation.usedAtUtc ? 'Использован' : 'Закрыт'} color={invitation.isActive ? 'success' : 'default'} variant="outlined" />
                             </Stack>
@@ -514,6 +647,96 @@ const AdminPage = () => {
           </Box>
         )}
       </Box>
+
+      <Dialog
+        open={Boolean(selectedSite && zoneSettingsOpen)}
+        onClose={() => setZoneSettingsOpen(false)}
+        fullWidth
+        maxWidth="xl"
+        sx={{
+          '& .MuiDialog-paper': {
+            minHeight: { md: '84vh' },
+            background: 'linear-gradient(145deg, rgba(2,6,23,0.98), rgba(15,23,42,0.96))',
+            border: '1px solid rgba(148,163,184,0.18)',
+          },
+        }}
+      >
+        <DialogTitle sx={{ px: { xs: 2, md: 3 }, py: 2, display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 800 }}>Разметка зон точки</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+              {selectedSite ? `${selectedSite.siteName}: настройка зон открыта из админской панели.` : 'Настройка зон точки.'}
+            </Typography>
+          </Box>
+          <IconButton onClick={() => setZoneSettingsOpen(false)} aria-label="Закрыть окно настройки зон">
+            <CloseRoundedIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ px: { xs: 2, md: 3 }, pb: { xs: 2, md: 3 }, pt: 0 }}>
+          {selectedSite ? <CentralZoneConfigurator baseUrl={baseUrl} cameras={selectedSiteCameras} accessMode="platform" /> : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(selectedAccount)} onClose={() => setSelectedAccount(null)} fullWidth maxWidth="md">
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'flex-start' }}>
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 850 }}>
+              {selectedAccount?.displayName || selectedAccount?.login || 'Пользователь'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {selectedAccount ? `${selectedAccount.login} · ${ROLE_LABELS[selectedAccount.roleKey] ?? selectedAccount.roleKey}` : ''}
+            </Typography>
+          </Box>
+          <IconButton onClick={() => setSelectedAccount(null)} aria-label="Закрыть карточку пользователя">
+            <CloseRoundedIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ display: 'grid', gap: 2.2, pb: 3 }}>
+          {selectedAccount ? (
+            <>
+              <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.2 }}>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Chip label={ACCOUNT_STATUS_LABELS[selectedAccount.status] ?? selectedAccount.status} color={selectedAccount.status === 'active' ? 'success' : 'warning'} variant="outlined" />
+                  <Chip label={`Роль: ${ROLE_LABELS[selectedAccount.roleKey] ?? selectedAccount.roleKey}`} variant="outlined" />
+                  <Chip label={`Доступ: ${formatDate(selectedAccount.accessExpiresAtUtc)}`} variant="outlined" />
+                </Stack>
+                <Divider />
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.2 }}>
+                  <Typography variant="body2" color="text.secondary">Создан: {formatDate(selectedAccount.createdAtUtc)}</Typography>
+                  <Typography variant="body2" color="text.secondary">Последний вход: {formatDate(selectedAccount.lastLoginAtUtc)}</Typography>
+                  <Typography variant="body2" color="text.secondary">IP входа: {selectedAccount.lastLoginIp || 'Нет данных'}</Typography>
+                  <Typography variant="body2" color="text.secondary">Права: {selectedAccount.permissions.join(', ') || 'Нет прав'}</Typography>
+                </Box>
+              </Paper>
+
+              <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5 }}>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>Управление доступом</Typography>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1}>
+                  <Button startIcon={<PlayCircleOutlineRoundedIcon />} variant="outlined" onClick={() => void updateAccountAccess('active')}>Запустить доступ</Button>
+                  <Button startIcon={<PauseCircleOutlineRoundedIcon />} color="warning" variant="outlined" onClick={() => void updateAccountAccess('suspended')}>Приостановить</Button>
+                  <Button color="error" variant="outlined" onClick={() => void updateAccountAccess('disabled')}>Заблокировать</Button>
+                </Stack>
+              </Paper>
+
+              <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5 }}>
+                <Typography variant="h6" sx={{ fontWeight: 800 }}>Пароль</Typography>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2}>
+                  <TextField
+                    label="Новый пароль"
+                    type="password"
+                    value={newAccountPassword}
+                    onChange={(event) => setNewAccountPassword(event.target.value)}
+                    fullWidth
+                  />
+                  <Button startIcon={<LockResetRoundedIcon />} variant="contained" onClick={() => void changeAccountPassword()} sx={{ minWidth: { md: 230 } }}>
+                    Задать новый пароль
+                  </Button>
+                </Stack>
+              </Paper>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 };

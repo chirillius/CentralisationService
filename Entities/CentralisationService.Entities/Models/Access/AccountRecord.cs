@@ -9,4 +9,6 @@ public sealed class AccountRecord
     public string PasswordSalt { get; init; } = string.Empty;
     public bool IsEnabled { get; init; } = true;
     public DateTime CreatedAtUtc { get; init; }
+    public DateTime? LastLoginAtUtc { get; init; }
+    public string? LastLoginIp { get; init; }
 }

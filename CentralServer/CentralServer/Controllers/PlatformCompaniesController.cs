@@ -233,6 +233,76 @@ public sealed class PlatformCompaniesController : ControllerBase
         return Ok(await _accessStoreService.GetCompanyAccountsAsync(companyId, cancellationToken));
     }
 
+    [HttpGet("{companyId:guid}/accounts/{accountId:guid}")]
+    public async Task<IActionResult> GetAccount(Guid companyId, Guid accountId, CancellationToken cancellationToken)
+    {
+        if (!await IsPlatformAdminAsync(cancellationToken))
+        {
+            return Unauthorized(new { code = "platform_admin_required" });
+        }
+        if (await _accessStoreService.GetCompanyAsync(companyId, cancellationToken) is null)
+        {
+            return NotFound();
+        }
+
+        var account = await _accessStoreService.GetCompanyAccountAsync(companyId, accountId, cancellationToken);
+        return account is null ? NotFound() : Ok(account);
+    }
+
+    [HttpPut("{companyId:guid}/accounts/{accountId:guid}/access")]
+    public async Task<IActionResult> UpdateAccountAccess(
+        Guid companyId,
+        Guid accountId,
+        [FromBody] UpdateCompanyAccountAccessRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!await IsPlatformAdminAsync(cancellationToken))
+        {
+            return Unauthorized(new { code = "platform_admin_required" });
+        }
+        if (await _accessStoreService.GetCompanyAsync(companyId, cancellationToken) is null)
+        {
+            return NotFound();
+        }
+
+        try
+        {
+            var account = await _accessStoreService.UpdateCompanyAccountAccessAsync(companyId, accountId, request.Status, cancellationToken);
+            return account is null ? NotFound() : Ok(account);
+        }
+        catch (AccessDeniedException ex)
+        {
+            return BadRequest(new { code = ex.Code, message = ex.Message });
+        }
+    }
+
+    [HttpPut("{companyId:guid}/accounts/{accountId:guid}/password")]
+    public async Task<IActionResult> ChangeAccountPassword(
+        Guid companyId,
+        Guid accountId,
+        [FromBody] ChangeCompanyAccountPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!await IsPlatformAdminAsync(cancellationToken))
+        {
+            return Unauthorized(new { code = "platform_admin_required" });
+        }
+        if (await _accessStoreService.GetCompanyAsync(companyId, cancellationToken) is null)
+        {
+            return NotFound();
+        }
+
+        try
+        {
+            var account = await _accessStoreService.ChangeCompanyAccountPasswordAsync(companyId, accountId, request.Password, cancellationToken);
+            return account is null ? NotFound() : Ok(account);
+        }
+        catch (AccessDeniedException ex)
+        {
+            return BadRequest(new { code = ex.Code, message = ex.Message });
+        }
+    }
+
     [HttpGet("{companyId:guid}/invitations")]
     public async Task<IActionResult> GetInvitations(Guid companyId, CancellationToken cancellationToken)
     {

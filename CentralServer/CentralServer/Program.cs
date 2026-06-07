@@ -31,6 +31,7 @@ builder.Services.AddSingleton<RetailDetectionProfileCatalogService>();
 builder.Services.AddSingleton<NeuroRetailAnalysisService>();
 builder.Services.AddSingleton<RetailDetectionEvidenceArchiveService>();
 builder.Services.AddSingleton<AccessStoreService>();
+builder.Services.AddScoped<PlatformAdminAccessService>();
 builder.Services.AddScoped<CompanyAccessContextService>();
 builder.Services.AddHostedService<StoreCatalogSyncBackgroundService>();
 builder.Services.AddHostedService<MotionMonitoringBackgroundService>();

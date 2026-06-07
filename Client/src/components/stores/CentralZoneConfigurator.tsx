@@ -29,11 +29,16 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 const CentralZoneConfigurator = ({
   baseUrl,
   cameras,
+  accessMode = 'company',
 }: {
   baseUrl: string;
   cameras: CameraDto[];
+  accessMode?: 'company' | 'platform';
 }) => {
-  const { showAlert, showSnackbar, authorizedFetch } = useAppStore();
+  const { showAlert, showSnackbar, authorizedFetch, platformAuthorizedFetch } = useAppStore();
+  const request = accessMode === 'platform' ? platformAuthorizedFetch : authorizedFetch;
+  const zonesPath = accessMode === 'platform' ? '/api/platform/zones' : '/api/zones';
+  const cameraFramePath = accessMode === 'platform' ? '/api/platform/cameras' : '/api/cameras';
   const [zoneCatalog, setZoneCatalog] = useState<ZoneNameCatalogDto | null>(null);
   const [zones, setZones] = useState<ZoneRecordDto[]>([]);
   const [selectedCameraKey, setSelectedCameraKey] = useState('');
@@ -76,7 +81,7 @@ const CentralZoneConfigurator = ({
     let cancelled = false;
     const loadCatalog = async () => {
       try {
-        const response = await authorizedFetch(`${baseUrl}/api/zones/names`);
+        const response = await request(`${baseUrl}${zonesPath}/names`);
         if (!response.ok) {
           throw new Error(`Не удалось загрузить каталог зон. Код ошибки: ${response.status}.`);
         }
@@ -97,7 +102,7 @@ const CentralZoneConfigurator = ({
     return () => {
       cancelled = true;
     };
-  }, [authorizedFetch, baseUrl]);
+  }, [baseUrl, request, zonesPath]);
 
   const revokeFrame = () => {
     if (frameUrl) {
@@ -106,7 +111,7 @@ const CentralZoneConfigurator = ({
   };
 
   const loadZones = async (cameraKey: string) => {
-    const response = await authorizedFetch(`${baseUrl}/api/zones?cameraKey=${encodeURIComponent(cameraKey)}`);
+    const response = await request(`${baseUrl}${zonesPath}?cameraKey=${encodeURIComponent(cameraKey)}`);
     if (!response.ok) {
       throw new Error(`Не удалось загрузить зоны. Код ошибки: ${response.status}.`);
     }
@@ -114,7 +119,7 @@ const CentralZoneConfigurator = ({
   };
 
   const loadFrame = async (cameraKey: string) => {
-    const response = await authorizedFetch(`${baseUrl}/api/cameras/${encodeURIComponent(cameraKey)}/frame?ts=${Date.now()}`);
+    const response = await request(`${baseUrl}${cameraFramePath}/${encodeURIComponent(cameraKey)}/frame?ts=${Date.now()}`);
     if (!response.ok) {
       throw new Error(`Не удалось получить кадр. Код ошибки: ${response.status}.`);
     }
@@ -262,12 +267,12 @@ const CentralZoneConfigurator = ({
 
     const method = selectedZoneId ? 'PUT' : 'POST';
     const endpoint = selectedZoneId
-      ? `${baseUrl}/api/zones/${selectedZoneId}`
-      : `${baseUrl}/api/zones`;
+      ? `${baseUrl}${zonesPath}/${selectedZoneId}`
+      : `${baseUrl}${zonesPath}`;
 
     setIsSaving(true);
     try {
-      const response = await authorizedFetch(endpoint, {
+      const response = await request(endpoint, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -293,7 +298,7 @@ const CentralZoneConfigurator = ({
     }
     setIsSaving(true);
     try {
-      const response = await authorizedFetch(`${baseUrl}/api/zones/${selectedZoneId}`, { method: 'DELETE' });
+      const response = await request(`${baseUrl}${zonesPath}/${selectedZoneId}`, { method: 'DELETE' });
       if (!response.ok) {
         throw new Error(`Не удалось удалить зону. Код ошибки: ${response.status}.`);
       }

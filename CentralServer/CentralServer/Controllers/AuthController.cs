@@ -22,7 +22,7 @@ public sealed class AuthController : ControllerBase
     {
         try
         {
-            var result = await _accessStoreService.ActivateInvitationAsync(request, cancellationToken);
+            var result = await _accessStoreService.ActivateInvitationAsync(request, GetClientIp(), cancellationToken);
             return Ok(ToResponse(result.SessionToken, result.Context));
         }
         catch (AccessDeniedException ex)
@@ -36,7 +36,7 @@ public sealed class AuthController : ControllerBase
     {
         try
         {
-            var result = await _accessStoreService.LoginAsync(request, cancellationToken);
+            var result = await _accessStoreService.LoginAsync(request, GetClientIp(), cancellationToken);
             return Ok(ToResponse(result.SessionToken, result.Context));
         }
         catch (AccessDeniedException ex)
@@ -85,4 +85,15 @@ public sealed class AuthController : ControllerBase
             name = context.CompanyName,
         },
     };
+
+    private string? GetClientIp()
+    {
+        var forwardedFor = Request.Headers["X-Forwarded-For"].ToString();
+        if (!string.IsNullOrWhiteSpace(forwardedFor))
+        {
+            return forwardedFor.Split(',')[0].Trim();
+        }
+
+        return HttpContext.Connection.RemoteIpAddress?.ToString();
+    }
 }

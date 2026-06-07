@@ -30,9 +30,14 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Stores only token hashes for invitations and sessions.
 - Supports revoking active company invitations.
 - Supports listing company users and company invitations for the platform admin UI.
+- Supports viewing a company user details card with role, status, last login time, and last login IP.
+- Supports platform-admin account access changes: active, suspended, and disabled.
+- Supports platform-admin password reset for company users.
 - Supports binding a site-side `Server` to a company through platform admin APIs.
 - Generates connector access tokens for bound site-side servers.
 - Uses `X-Connector-Token` for bound `CentralServer -> Server` transport calls.
+- Supports platform-admin camera frame proxying for site settings.
+- Supports platform-admin zone CRUD for zone markup from admin site settings.
 - Has unit tests for access/session behavior.
 
 ### Neuro
@@ -68,7 +73,11 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Has Russian UI copy for the current working screens.
 - Supports company user login.
 - Supports one-time invitation activation.
+- Checks password confirmation on invitation activation before sending registration request.
 - Stores company bearer session locally.
+- Stores the successful CentralServer host and restores it on the next login screen opening.
+- Accepts CentralServer address input as host/IP only and resolves it to `http://<host>:5120`.
+- Stores company user role and permissions locally for UI capability filtering.
 - Sends company bearer session in API requests.
 - Supports platform admin login through the login screen.
 - Stores platform admin bearer session separately from company session.
@@ -78,6 +87,7 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Shows camera streaming/preview through `CentralServer`.
 - Opens point settings as an overlay on the stores page.
 - Supports zone markup UI on a last captured frame.
+- Hides company-side zone settings from users without `zones.manage`.
 - Supports model profile settings UI inside point settings.
 - Shows motion archive data from `CentralServer`.
 - Provides admin company list.
@@ -88,8 +98,14 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Shows site/server availability with a status indicator.
 - Shows cameras for a selected site in admin UI.
 - Shows company users and invitation statuses in admin UI.
+- Opens company user details from admin UI.
+- Shows user role, access status, last login time, last login IP, grant expiration, and permissions in admin UI.
+- Allows enabling, suspending, and blocking company users from admin UI.
+- Allows setting a new company user password from admin UI.
 - Allows issuing one-time invitation tokens from admin UI.
+- Allows selecting invitation role: administrator or operator.
 - Allows closing active invitation tokens from admin UI.
+- Allows marking zones from the selected site settings in admin UI.
 - Shows repeated access errors as one centered Russian notification instead of repeatedly restarting page loading.
 - Requires a correct site display name when binding a new site-side `Server`.
 
@@ -150,7 +166,6 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 
 ### CentralServer
 
-- Add platform-admin zone endpoints so admins can mark zones from company site settings without logging in as a company user.
 - Add platform-admin detection profile endpoints scoped to selected company/site/camera.
 - Add API for editing/deleting company site bindings.
 - Add API for disabling a single site-side server binding.
@@ -181,9 +196,8 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 
 ### Client
 
-- Add platform-admin zone markup inside selected company site settings.
 - Add platform-admin model profile settings inside selected company site settings.
-- Add company user management actions: disable user, extend grant, change role.
+- Add company user grant expiration editing and role change actions.
 - Add active session view and session revoke actions.
 - Add site edit/delete UI.
 - Add better loading, empty, and error states in admin detail tabs.
@@ -238,3 +252,21 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Changed client error handling so blocked-company and access errors are shown once as centered Russian notifications.
 - Required correct site display name during site-side `Server` binding.
 - Localized main API/client-facing error messages to Russian.
+
+### 2026-06-07
+
+- Added successful CentralServer host restoration on the login screen.
+- Changed CentralServer address input to host/IP-only entry with automatic `http://<host>:5120` resolution.
+- Added password confirmation to invitation activation.
+- Added company roles for invitations: administrator and operator.
+- Added role-based permissions for company administrator and operator invitations.
+- Added local client storage of company role and permissions.
+- Hid company-side zone settings from operators without `zones.manage`.
+- Added last login time and last login IP tracking for company users.
+- Added platform-admin user details endpoint.
+- Added platform-admin company user access control: active, suspended, disabled.
+- Added platform-admin company user password reset.
+- Added platform-admin camera frame proxy endpoint.
+- Added platform-admin zone CRUD endpoints.
+- Added zone markup from admin selected site settings.
+- Added admin UI user details dialog with access actions and password reset.

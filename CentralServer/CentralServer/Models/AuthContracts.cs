@@ -66,3 +66,13 @@ public sealed class UpdateCompanyAccessRequest
     public DateTime? AccessExpiresAtUtc { get; init; }
     public string? Reason { get; init; }
 }
+
+public sealed class UpdateCompanyAccountAccessRequest
+{
+    public string Status { get; init; } = "active";
+}
+
+public sealed class ChangeCompanyAccountPasswordRequest
+{
+    public string Password { get; init; } = string.Empty;
+}

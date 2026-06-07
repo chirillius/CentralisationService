@@ -20,7 +20,7 @@ const getStoreKey = (store: StoreDto) => `${store.siteKey}::${store.serverBaseUr
 
 const StoresPage = () => {
   const navigate = useNavigate();
-  const { baseUrl, selectedStore, setSelectedStore, showAlert, showSnackbar, authorizedFetch } = useAppStore();
+  const { baseUrl, selectedStore, setSelectedStore, showAlert, showSnackbar, authorizedFetch, accountPermissions } = useAppStore();
   const [stores, setStores] = useState<StoreDto[]>([]);
   const [cameras, setCameras] = useState<Record<string, CameraDto[]>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -78,6 +78,7 @@ const StoresPage = () => {
     () => stores.find((store) => getStoreKey(store) === activeStoreKey) ?? null,
     [activeStoreKey, stores],
   );
+  const canManageZones = accountPermissions.includes('zones.manage');
 
   const currentStoreCameras = currentStore ? cameras[currentStore.siteKey] ?? [] : [];
 
@@ -218,9 +219,11 @@ const StoresPage = () => {
                       <Button variant="contained" onClick={() => void activateStore(currentStore)} disabled={isActivating === getStoreKey(currentStore)}>
                         {isActivating === getStoreKey(currentStore) ? 'Подключаем...' : 'Сделать активным'}
                       </Button>
-                      <Button variant="outlined" startIcon={<AdminPanelSettingsRoundedIcon />} onClick={() => setZoneSettingsOpen(true)} disabled={!currentStore.isAvailable}>
-                        Открыть настройку зон
-                      </Button>
+                      {canManageZones ? (
+                        <Button variant="outlined" startIcon={<AdminPanelSettingsRoundedIcon />} onClick={() => setZoneSettingsOpen(true)} disabled={!currentStore.isAvailable}>
+                          Открыть настройку зон
+                        </Button>
+                      ) : null}
                       <Button variant="outlined" startIcon={<AddBusinessRoundedIcon />} onClick={() => showAlert('Информация', 'UI добавления магазина будет подключаться отдельным этапом, когда central catalog перейдёт с appsettings на API+persistence.')}>
                         Добавить магазин
                       </Button>

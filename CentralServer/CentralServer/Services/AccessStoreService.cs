@@ -10,11 +10,34 @@ namespace CentralServer.Services;
 
 public sealed class AccessStoreService
 {
+    private const string CompanyAdminRoleKey = "company-admin";
+    private const string CompanyOperatorRoleKey = "company-operator";
+    private const string AccessStatusActive = "active";
+    private const string AccessStatusSuspended = "suspended";
+    private const string AccessStatusDisabled = "disabled";
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
+
+    private static readonly string[] CompanyAdminPermissions =
+    [
+        "sites.read",
+        "cameras.read",
+        "zones.manage",
+        "detection-profiles.manage",
+        "archive.read",
+        "users.manage",
+    ];
+
+    private static readonly string[] CompanyOperatorPermissions =
+    [
+        "sites.read",
+        "cameras.read",
+        "archive.read",
+    ];
 
     private readonly AccessOptions _options;
     private readonly IWebHostEnvironment _environment;
@@ -107,8 +130,8 @@ public sealed class AccessStoreService
             CompanyId = companyId,
             Name = request.Name.Trim(),
             TokenHash = HashToken(token),
-            RoleKey = request.RoleKey.Trim(),
-            Permissions = request.Permissions.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            RoleKey = NormalizeRoleKey(request.RoleKey),
+            Permissions = GetDefaultPermissions(NormalizeRoleKey(request.RoleKey)),
             ExpiresAtUtc = request.ExpiresAtUtc,
             CreatedAtUtc = DateTime.UtcNow,
         };
@@ -130,6 +153,7 @@ public sealed class AccessStoreService
 
     public async Task<(string SessionToken, AuthenticatedCompanyContext Context)> ActivateInvitationAsync(
         ActivateInvitationRequest request,
+        string? ipAddress,
         CancellationToken cancellationToken)
     {
         ValidateCredentials(request.Login, request.Password);
@@ -173,6 +197,8 @@ public sealed class AccessStoreService
                 PasswordHash = passwordHash,
                 PasswordSalt = passwordSalt,
                 CreatedAtUtc = now,
+                LastLoginAtUtc = now,
+                LastLoginIp = NormalizeIpAddress(ipAddress),
             };
             accounts.Add(account);
 
@@ -183,6 +209,7 @@ public sealed class AccessStoreService
                 CompanyId = company.Id,
                 AccountId = account.Id,
                 RoleKey = invitation.RoleKey,
+                Status = AccessStatusActive,
                 Permissions = invitation.Permissions,
                 ExpiresAtUtc = invitation.ExpiresAtUtc,
                 CreatedAtUtc = now,
@@ -217,27 +244,31 @@ public sealed class AccessStoreService
 
     public async Task<(string SessionToken, AuthenticatedCompanyContext Context)> LoginAsync(
         LoginRequest request,
+        string? ipAddress,
         CancellationToken cancellationToken)
     {
         await _writeLock.WaitAsync(cancellationToken);
         try
         {
             var now = DateTime.UtcNow;
-            var account = (await ReadAsync<AccountRecord>("accounts.json", cancellationToken))
-                .FirstOrDefault(item => string.Equals(item.Login, request.Login.Trim(), StringComparison.OrdinalIgnoreCase));
+            var accounts = await ReadAsync<AccountRecord>("accounts.json", cancellationToken);
+            var accountIndex = accounts.FindIndex(item => string.Equals(item.Login, request.Login.Trim(), StringComparison.OrdinalIgnoreCase));
+            var account = accountIndex >= 0 ? accounts[accountIndex] : null;
             if (account is null || !account.IsEnabled || !VerifyPassword(request.Password, account.PasswordHash, account.PasswordSalt))
             {
                 throw new AccessDeniedException("invalid_credentials", "Неверный логин или пароль.");
             }
 
             var grant = (await ReadAsync<CompanyAccessGrant>("grants.json", cancellationToken))
-                .FirstOrDefault(item => item.AccountId == account.Id && item.IsEnabled);
+                .FirstOrDefault(item => item.AccountId == account.Id && item.IsEnabled && IsAccessStatusActive(item.Status));
             if (grant is null || grant.ExpiresAtUtc.HasValue && grant.ExpiresAtUtc <= now)
             {
                 throw new AccessDeniedException("account_access_expired", "Доступ пользователя отключён или срок доступа истёк.");
             }
 
             var company = await RequireActiveCompanyAsync(grant.CompanyId, now, cancellationToken);
+            accounts[accountIndex] = CopyAccount(account, lastLoginAtUtc: now, lastLoginIp: NormalizeIpAddress(ipAddress));
+            await WriteAsync("accounts.json", accounts, cancellationToken);
             return await CreateSessionUnderLockAsync(company, account, grant, now, cancellationToken);
         }
         finally
@@ -322,7 +353,12 @@ public sealed class AccessStoreService
         var company = await RequireActiveCompanyAsync(session.CompanyId, now, cancellationToken);
         var account = (await ReadAsync<AccountRecord>("accounts.json", cancellationToken)).FirstOrDefault(item => item.Id == session.AccountId);
         var grant = (await ReadAsync<CompanyAccessGrant>("grants.json", cancellationToken)).FirstOrDefault(item => item.Id == session.GrantId);
-        if (account is null || !account.IsEnabled || grant is null || !grant.IsEnabled || grant.ExpiresAtUtc.HasValue && grant.ExpiresAtUtc <= now)
+        if (account is null
+            || !account.IsEnabled
+            || grant is null
+            || !grant.IsEnabled
+            || !IsAccessStatusActive(grant.Status)
+            || grant.ExpiresAtUtc.HasValue && grant.ExpiresAtUtc <= now)
         {
             throw new AccessDeniedException("account_access_expired", "Доступ пользователя отключён или срок доступа истёк.");
         }
@@ -406,13 +442,101 @@ public sealed class AccessStoreService
                 Login = account.Login,
                 DisplayName = account.DisplayName,
                 RoleKey = grant.RoleKey,
+                Status = NormalizeAccountStatus(grant.Status),
                 Permissions = grant.Permissions,
                 AccessExpiresAtUtc = grant.ExpiresAtUtc,
-                IsEnabled = account.IsEnabled && grant.IsEnabled,
+                IsEnabled = account.IsEnabled && grant.IsEnabled && IsAccessStatusActive(grant.Status),
                 CreatedAtUtc = account.CreatedAtUtc,
+                LastLoginAtUtc = account.LastLoginAtUtc,
+                LastLoginIp = account.LastLoginIp,
             })
             .OrderBy(item => item.Login)
             .ToList();
+    }
+
+    public async Task<CompanyAccountView?> GetCompanyAccountAsync(Guid companyId, Guid accountId, CancellationToken cancellationToken) =>
+        (await GetCompanyAccountsAsync(companyId, cancellationToken)).FirstOrDefault(item => item.AccountId == accountId);
+
+    public async Task<CompanyAccountView?> UpdateCompanyAccountAccessAsync(
+        Guid companyId,
+        Guid accountId,
+        string status,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStatus = NormalizeAccountStatus(status);
+        await _writeLock.WaitAsync(cancellationToken);
+        try
+        {
+            var grants = await ReadAsync<CompanyAccessGrant>("grants.json", cancellationToken);
+            var grantIndex = grants.FindIndex(item => item.CompanyId == companyId && item.AccountId == accountId);
+            if (grantIndex < 0)
+            {
+                return null;
+            }
+
+            var grant = grants[grantIndex];
+            grants[grantIndex] = new CompanyAccessGrant
+            {
+                Id = grant.Id,
+                CompanyId = grant.CompanyId,
+                AccountId = grant.AccountId,
+                RoleKey = grant.RoleKey,
+                Status = normalizedStatus,
+                Permissions = grant.Permissions,
+                ExpiresAtUtc = grant.ExpiresAtUtc,
+                IsEnabled = grant.IsEnabled,
+                CreatedAtUtc = grant.CreatedAtUtc,
+            };
+            await WriteAsync("grants.json", grants, cancellationToken);
+
+            if (!IsAccessStatusActive(normalizedStatus))
+            {
+                await RevokeAccountSessionsUnderLockAsync(companyId, accountId, cancellationToken);
+            }
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+
+        return await GetCompanyAccountAsync(companyId, accountId, cancellationToken);
+    }
+
+    public async Task<CompanyAccountView?> ChangeCompanyAccountPasswordAsync(
+        Guid companyId,
+        Guid accountId,
+        string password,
+        CancellationToken cancellationToken)
+    {
+        ValidatePassword(password);
+        await _writeLock.WaitAsync(cancellationToken);
+        try
+        {
+            var grants = await ReadAsync<CompanyAccessGrant>("grants.json", cancellationToken);
+            if (!grants.Any(item => item.CompanyId == companyId && item.AccountId == accountId))
+            {
+                return null;
+            }
+
+            var accounts = await ReadAsync<AccountRecord>("accounts.json", cancellationToken);
+            var accountIndex = accounts.FindIndex(item => item.Id == accountId);
+            if (accountIndex < 0)
+            {
+                return null;
+            }
+
+            var account = accounts[accountIndex];
+            var (passwordHash, passwordSalt) = HashPassword(password);
+            accounts[accountIndex] = CopyAccount(account, passwordHash: passwordHash, passwordSalt: passwordSalt);
+            await WriteAsync("accounts.json", accounts, cancellationToken);
+            await RevokeAccountSessionsUnderLockAsync(companyId, accountId, cancellationToken);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+
+        return await GetCompanyAccountAsync(companyId, accountId, cancellationToken);
     }
 
     public async Task<List<CompanyInvitationView>> GetCompanyInvitationsAsync(Guid companyId, CancellationToken cancellationToken)
@@ -541,6 +665,46 @@ public sealed class AccessStoreService
             AccessExpiresAtUtc = grant.ExpiresAtUtc,
         };
 
+    private async Task RevokeAccountSessionsUnderLockAsync(Guid companyId, Guid accountId, CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var sessions = await ReadAsync<AccessSession>("sessions.json", cancellationToken);
+        sessions = sessions.Select(session => session.CompanyId == companyId && session.AccountId == accountId && session.RevokedAtUtc is null
+            ? new AccessSession
+            {
+                Id = session.Id,
+                CompanyId = session.CompanyId,
+                AccountId = session.AccountId,
+                GrantId = session.GrantId,
+                TokenHash = session.TokenHash,
+                CreatedAtUtc = session.CreatedAtUtc,
+                ExpiresAtUtc = session.ExpiresAtUtc,
+                RevokedAtUtc = now,
+                LastUsedAtUtc = session.LastUsedAtUtc,
+            }
+            : session).ToList();
+        await WriteAsync("sessions.json", sessions, cancellationToken);
+    }
+
+    private static AccountRecord CopyAccount(
+        AccountRecord account,
+        string? passwordHash = null,
+        string? passwordSalt = null,
+        DateTime? lastLoginAtUtc = null,
+        string? lastLoginIp = null) =>
+        new()
+        {
+            Id = account.Id,
+            Login = account.Login,
+            DisplayName = account.DisplayName,
+            PasswordHash = passwordHash ?? account.PasswordHash,
+            PasswordSalt = passwordSalt ?? account.PasswordSalt,
+            IsEnabled = account.IsEnabled,
+            CreatedAtUtc = account.CreatedAtUtc,
+            LastLoginAtUtc = lastLoginAtUtc ?? account.LastLoginAtUtc,
+            LastLoginIp = lastLoginIp ?? account.LastLoginIp,
+        };
+
     private static (string Hash, string Salt) HashPassword(string password)
     {
         var salt = RandomNumberGenerator.GetBytes(16);
@@ -560,11 +724,45 @@ public sealed class AccessStoreService
         {
             throw new AccessDeniedException("invalid_login", "Логин должен содержать минимум три символа.");
         }
+        ValidatePassword(password);
+    }
+
+    private static void ValidatePassword(string password)
+    {
         if (password.Length < 8)
         {
             throw new AccessDeniedException("weak_password", "Пароль должен содержать минимум восемь символов.");
         }
     }
+
+    private static string NormalizeRoleKey(string roleKey)
+    {
+        var normalized = roleKey.Trim().ToLowerInvariant();
+        return normalized == CompanyAdminRoleKey ? CompanyAdminRoleKey : CompanyOperatorRoleKey;
+    }
+
+    private static IReadOnlyList<string> GetDefaultPermissions(string roleKey) =>
+        string.Equals(roleKey, CompanyAdminRoleKey, StringComparison.OrdinalIgnoreCase)
+            ? CompanyAdminPermissions
+            : CompanyOperatorPermissions;
+
+    private static string NormalizeAccountStatus(string status)
+    {
+        var normalized = status.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            AccessStatusActive => AccessStatusActive,
+            AccessStatusSuspended => AccessStatusSuspended,
+            AccessStatusDisabled => AccessStatusDisabled,
+            _ => throw new AccessDeniedException("invalid_account_status", "Некорректный статус пользователя."),
+        };
+    }
+
+    private static bool IsAccessStatusActive(string status) =>
+        string.Equals(NormalizeAccountStatus(status), AccessStatusActive, StringComparison.OrdinalIgnoreCase);
+
+    private static string? NormalizeIpAddress(string? ipAddress) =>
+        string.IsNullOrWhiteSpace(ipAddress) ? null : ipAddress.Trim();
 
     private async Task<List<T>> ReadAsync<T>(string fileName, CancellationToken cancellationToken)
     {

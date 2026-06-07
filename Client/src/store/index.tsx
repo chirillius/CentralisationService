@@ -6,6 +6,7 @@ const STORAGE_KEYS = {
   login: 'centralClientLogin',
   platformAuth: 'centralClientPlatformAuth',
   platformLogin: 'centralClientPlatformLogin',
+  account: 'centralClientAccount',
   baseUrl: 'centralClientBaseUrl',
   selectedStore: 'centralClientSelectedStore',
 } as const;
@@ -26,11 +27,13 @@ type AppStoreValue = {
   isPlatformAdminAuthenticated: boolean;
   login: string | null;
   platformLogin: string | null;
+  accountRoleKey: string | null;
+  accountPermissions: string[];
   baseUrl: string;
   selectedStore: StoreDto | null;
   sessionToken: string | null;
   platformSessionToken: string | null;
-  setAuthenticated: (login: string, sessionToken: string) => void;
+  setAuthenticated: (account: { login: string; roleKey: string; permissions: string[] }, sessionToken: string) => void;
   setPlatformAuthenticated: (login: string, sessionToken: string) => void;
   logout: () => void;
   platformLogout: () => void;
@@ -120,6 +123,9 @@ export const AppStoreProvider = ({
   );
   const [login, setLogin] = useState<string | null>(() => localStorage.getItem(STORAGE_KEYS.login));
   const [platformLogin, setPlatformLogin] = useState<string | null>(() => localStorage.getItem(STORAGE_KEYS.platformLogin));
+  const [account, setAccount] = useState<{ roleKey: string; permissions: string[] } | null>(() =>
+    readJson<{ roleKey: string; permissions: string[] }>(STORAGE_KEYS.account),
+  );
   const [sessionToken, setSessionToken] = useState<string | null>(() => localStorage.getItem(STORAGE_KEYS.auth));
   const [platformSessionToken, setPlatformSessionToken] = useState<string | null>(() =>
     localStorage.getItem(STORAGE_KEYS.platformAuth),
@@ -195,15 +201,25 @@ export const AppStoreProvider = ({
       isPlatformAdminAuthenticated,
       login,
       platformLogin,
+      accountRoleKey: account?.roleKey ?? null,
+      accountPermissions: account?.permissions ?? [],
       sessionToken,
       platformSessionToken,
       baseUrl: baseUrlState,
       selectedStore,
-      setAuthenticated: (nextLogin, nextSessionToken) => {
+      setAuthenticated: (nextAccount, nextSessionToken) => {
         localStorage.setItem(STORAGE_KEYS.auth, nextSessionToken);
-        localStorage.setItem(STORAGE_KEYS.login, nextLogin);
+        localStorage.setItem(STORAGE_KEYS.login, nextAccount.login);
+        localStorage.setItem(STORAGE_KEYS.account, JSON.stringify({
+          roleKey: nextAccount.roleKey,
+          permissions: nextAccount.permissions,
+        }));
         startTransition(() => {
-          setLogin(nextLogin);
+          setLogin(nextAccount.login);
+          setAccount({
+            roleKey: nextAccount.roleKey,
+            permissions: nextAccount.permissions,
+          });
           setSessionToken(nextSessionToken);
           setIsAuthenticated(true);
         });
@@ -220,8 +236,10 @@ export const AppStoreProvider = ({
       logout: () => {
         localStorage.removeItem(STORAGE_KEYS.auth);
         localStorage.removeItem(STORAGE_KEYS.login);
+        localStorage.removeItem(STORAGE_KEYS.account);
         startTransition(() => {
           setLogin(null);
+          setAccount(null);
           setSessionToken(null);
           setIsAuthenticated(false);
         });
@@ -269,6 +287,7 @@ export const AppStoreProvider = ({
       platformLogin,
       platformSessionToken,
       selectedStore,
+      account,
       sessionToken,
       showAlert,
       showSnackbar,

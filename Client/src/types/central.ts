@@ -94,10 +94,13 @@ export type CompanyAccountDto = {
   login: string;
   displayName: string;
   roleKey: string;
+  status: 'active' | 'suspended' | 'disabled';
   permissions: string[];
   accessExpiresAtUtc: string | null;
   isEnabled: boolean;
   createdAtUtc: string;
+  lastLoginAtUtc: string | null;
+  lastLoginIp: string | null;
 };
 
 export type CompanyInvitationDto = {

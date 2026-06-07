@@ -6,6 +6,7 @@ Thumbs.db
 .idea/
 .vscode/
 !.vscode/settings.json
+.vs/
 
 # .NET build output
 **/bin/
@@ -19,6 +20,11 @@ TestResults/
 *.pdb
 *.dll
 *.exe
+**/publish/
+**/logs/
+*.log
+coverage/
+coverage.*
 
 # Test projects are kept out of the deployment repository for now.
 **/*.Tests/
@@ -68,4 +74,3 @@ Neuro/Neuro/DNNModels/
 *.local.json
 appsettings.Local.json
 appsettings.*.Local.json
-
