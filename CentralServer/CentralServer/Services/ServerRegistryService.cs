@@ -250,6 +250,13 @@ public sealed class ServerRegistryService
                     });
                 }
             }
+
+            await _accessStoreService.UpsertSyncedCamerasAsync(
+                state.CompanyKey,
+                state.SiteKey,
+                normalizedBaseUrl,
+                state.Cameras,
+                cancellationToken);
         }
         catch (Exception ex)
         {

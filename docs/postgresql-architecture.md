@@ -59,6 +59,23 @@ Current files:
 
 - `001_initial_platform_schema.sql` creates schemas, tables, constraints, and indexes.
 - `002_seed_detection_catalog.sql` inserts initial roles, permissions, zone names, and detection types.
+- `003_runtime_storage_adjustments.sql` adds runtime fields needed by the current CentralServer connector orchestration.
+
+## Current Implementation Status
+
+`CentralServer` now uses PostgreSQL at runtime for:
+
+- companies and company availability;
+- platform admin accounts and platform admin sessions;
+- company accounts, grants, invitations, and company sessions;
+- company sites and site-side `Server` bindings;
+- synced camera metadata;
+- zone name templates, zones, and polygon points;
+- retail detection profiles and model call parameters.
+
+Existing JSON/appsettings configuration is treated as bootstrap seed only when the database is empty. After bootstrap, PostgreSQL is the source of truth.
+
+The current transition stores the site-side connector access token in PostgreSQL so `CentralServer` can continue calling protected `Server` endpoints after restart. Before production rollout this value should be encrypted or moved to a secret store.
 
 ## Multi-Tenant Rule
 
@@ -616,8 +633,7 @@ The initial schema includes indexes for:
 
 ## Next Implementation Steps
 
-1. Add a CentralServer database access layer with Npgsql/EF Core or SQL migrations runner.
-2. Add configuration:
+1. Add configuration:
 
 ```json
 {
@@ -629,19 +645,15 @@ The initial schema includes indexes for:
 
 The password must be supplied through environment variables, user-secrets, secret storage, or ignored local config.
 
-3. Create a JSON-to-PostgreSQL migration command for:
+2. Create an explicit JSON-to-PostgreSQL migration/verification command for:
 
 - `Configuration/access/*.json`;
 - `Configuration/zones.json`;
 - `Configuration/zone_names.json`;
 - `Configuration/detection_profiles.json`;
 
-4. Replace JSON services one by one:
-
-- access storage;
-- company/site binding storage;
-- zone catalog storage;
-- detection profile storage;
-- incident/evidence persistence.
-
-5. Keep JSON fallback only for local Server connector binding/cache.
+3. Add incident/evidence persistence repositories.
+4. Add archive index persistence repositories.
+5. Add audit and ops telemetry writes.
+6. Encrypt connector tokens or move them to a secret store.
+7. Keep JSON fallback only for local Server connector binding/cache.

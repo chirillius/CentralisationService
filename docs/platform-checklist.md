@@ -10,17 +10,20 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 
 - Owns centralized processing according to `docs/processing-rule.md`.
 - Has a target PostgreSQL schema for platform, access, catalog, detection, incidents, archive, audit, and operational telemetry.
+- Uses PostgreSQL as the runtime source of truth for companies, platform admins, users, grants, invitations, sessions, sites, server bindings, synced cameras, zones, and retail detection profiles.
+- Applies PostgreSQL schema SQL files on startup when enabled.
+- Seeds the first database state from existing JSON/appsettings configuration only when the database is empty.
 - Polls site-side `Server` instances and builds a central store/camera catalog.
-- Supports legacy configured stores from `appsettings.json`.
-- Supports dynamic company-site bindings from `Configuration/access/company-sites.json`.
+- Imports legacy configured stores from `appsettings.json` into PostgreSQL for transition/bootstrap.
+- Stores dynamic company-site bindings in PostgreSQL.
 - Filters stores, cameras, archive, zones, and detection settings by authenticated company context.
 - Proxies camera frames through `Server`.
 - Runs motion detection on central frames.
 - Saves motion JPEG frames centrally under `videos/<yyyy-MM-dd>/<cameraName>/`.
 - Exposes archive frame list and archive frame download endpoints.
-- Stores zone names in JSON.
-- Stores zones in JSON and supports zone CRUD through CentralServer APIs.
-- Stores retail detection profiles in JSON.
+- Stores zone names in PostgreSQL.
+- Stores zones and polygon points in PostgreSQL and supports zone CRUD through CentralServer APIs.
+- Stores retail detection profiles and model parameters in PostgreSQL.
 - Runs centralized retail detection background monitoring.
 - Calls `Neuro` for retail scene analysis.
 - Saves test evidence frames when a person is present in the client zone.
@@ -37,6 +40,7 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Supports binding a site-side `Server` to a company through platform admin APIs.
 - Generates connector access tokens for bound site-side servers.
 - Uses `X-Connector-Token` for bound `CentralServer -> Server` transport calls.
+- Stores connector transport token metadata in PostgreSQL so protected site-side calls survive CentralServer restarts.
 - Supports platform-admin camera frame proxying for site settings.
 - Supports platform-admin zone CRUD for zone markup from admin site settings.
 - Has unit tests for access/session behavior.
@@ -157,10 +161,10 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 
 ### Platform And Data Storage
 
-- Connect CentralServer runtime services to PostgreSQL.
-- Add an automated migration from JSON files to PostgreSQL.
+- Add an explicit one-shot migration/verification command for existing production JSON files.
 - Decide whether company isolation is by `company_id`, PostgreSQL schema, or separate DB for large customers.
-- Move platform admin credentials from `appsettings.json` to environment variables, secret storage, or database users.
+- Move initial platform admin bootstrap password from `appsettings.json` to environment variables or secret storage.
+- Encrypt or move connector transport tokens from PostgreSQL plaintext transition storage to a proper secret store.
 - Add token rotation for site-side connector tokens.
 - Add audit log for admin actions, token creation/revocation, server binding, and failed access.
 - Add persistent archive index rebuild on startup.
@@ -258,6 +262,12 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 
 - Added successful CentralServer host restoration on the login screen.
 - Changed CentralServer address input to host/IP-only entry with automatic `http://<host>:5120` resolution.
+- Installed and configured PostgreSQL 17 on the CentralServer Windows machine.
+- Created `centralisation_service` database and applied initial platform/detection SQL schema.
+- Added `Npgsql` runtime database access to `CentralServer`.
+- Added startup PostgreSQL schema initializer.
+- Migrated CentralServer runtime storage from JSON files to PostgreSQL for access, companies, site bindings, synced cameras, zones, and retail detection profiles.
+- Kept existing JSON/appsettings configuration only as bootstrap seed when the database is empty.
 - Added password confirmation to invitation activation.
 - Added company roles for invitations: administrator and operator.
 - Added role-based permissions for company administrator and operator invitations.

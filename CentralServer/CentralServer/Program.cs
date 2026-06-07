@@ -9,6 +9,7 @@ builder.Services.Configure<StoreCatalogOptions>(builder.Configuration.GetSection
 builder.Services.Configure<ZoneCatalogOptions>(builder.Configuration.GetSection("ZoneCatalog"));
 builder.Services.Configure<RetailDetectionMonitoringOptions>(builder.Configuration.GetSection("RetailDetectionMonitoring"));
 builder.Services.Configure<AccessOptions>(builder.Configuration.GetSection("Access"));
+builder.Services.Configure<PostgreSqlOptions>(builder.Configuration.GetSection("PostgreSql"));
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
@@ -21,6 +22,8 @@ builder.Services.AddCors(options =>
 });
 builder.Services.AddHttpClient(nameof(RemoteFrameProxyService));
 builder.Services.AddHttpClient(nameof(ServerRegistryService));
+builder.Services.AddSingleton(PostgreSqlDataSourceFactory.Create(builder.Configuration));
+builder.Services.AddHostedService<PostgreSqlSchemaInitializer>();
 builder.Services.AddSingleton<ServerRegistryService>();
 builder.Services.AddSingleton<RemoteFrameProxyService>();
 builder.Services.AddSingleton<MotionDetectionService>();
