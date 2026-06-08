@@ -13,6 +13,7 @@ public sealed class MotionDetectionService
         RemoteCameraState camera,
         byte[] jpegBytes,
         MotionMonitoringOptions options,
+        double threshold,
         out double delta)
     {
         using var image = Image.Load<Rgba32>(jpegBytes);
@@ -49,7 +50,7 @@ public sealed class MotionDetectionService
         delta = sum / currentSignature.Length;
         _previousFrames[camera.CameraKey] = currentSignature;
 
-        if (delta < options.MotionThreshold)
+        if (delta < threshold)
         {
             return false;
         }

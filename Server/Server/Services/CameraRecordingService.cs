@@ -75,12 +75,14 @@ public sealed class CameraRecordingService
             "-y",
             "-rtsp_transport tcp",
             "-threads 1",
-            "-t",
-            maxSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "-i",
             Quote(rtspAddress),
+            "-t",
+            maxSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "-c:v copy",
             "-an",
+            "-avoid_negative_ts make_zero",
+            "-movflags +faststart",
             Quote(temporaryPath));
 
         var process = new Process

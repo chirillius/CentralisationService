@@ -60,14 +60,18 @@ public sealed class MotionMonitoringBackgroundService : BackgroundService
 
                     var frameBytes = await _frameProxyService.GetFrameAsync(camera, stoppingToken);
                     var now = DateTime.UtcNow;
-                    var hasMotion = _motionDetectionService.HasMotion(camera, frameBytes, _options, out var delta);
+                    var isRecording = _activeRecordings.ContainsKey(camera.CameraKey);
+                    var motionThreshold = isRecording
+                        ? Math.Min(_options.MotionThreshold, _options.ContinueMotionThreshold)
+                        : _options.MotionThreshold;
+                    var hasMotion = _motionDetectionService.HasMotion(camera, frameBytes, _options, motionThreshold, out var delta);
 
                     _logger.LogDebug(
                         "Motion check for camera {CameraName}: delta {Delta:F2}, threshold {Threshold:F2}, recording {IsRecording}",
                         camera.CameraName,
                         delta,
-                        _options.MotionThreshold,
-                        _activeRecordings.ContainsKey(camera.CameraKey));
+                        motionThreshold,
+                        isRecording);
 
                     if (hasMotion)
                     {
@@ -122,6 +126,12 @@ public sealed class MotionMonitoringBackgroundService : BackgroundService
 
         var noMotionFor = nowUtc - active.LastMotionAtUtc;
         if (noMotionFor < TimeSpan.FromSeconds(Math.Max(1, _options.StopAfterNoMotionSeconds)))
+        {
+            return;
+        }
+
+        var recordingDuration = nowUtc - active.StartedAtUtc;
+        if (recordingDuration < TimeSpan.FromSeconds(Math.Max(1, _options.MinRecordingSeconds)))
         {
             return;
         }
