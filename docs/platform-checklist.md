@@ -21,6 +21,7 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Runs motion detection on central frames.
 - Starts and stops remote RTSP recording sessions on site-side `Server` when motion appears/disappears anywhere in the full camera frame.
 - Keeps motion recording independent from marked zones; zones remain available for detection/business-rule scenarios.
+- Uses separate start/continue motion thresholds plus minimum recording duration to avoid splitting active motion into micro-fragments.
 - Downloads completed remote motion `.mp4` fragments from `Server` and saves them centrally under `company/<companyKey>/<siteKey>/videos/<yyyy-MM-dd>/<cameraName>/videos/`.
 - Splits long continuous motion recordings by configurable max duration so fragments are available for analysis without waiting indefinitely.
 - Exposes archive item list and archive file download endpoints with image/video content type support.
@@ -327,3 +328,4 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Changed CentralServer motion monitoring to record while motion continues, stop after configurable no-motion delay, and split by configurable max duration.
 - Added CentralServer download of completed remote `.mp4` recordings into the company/site central archive.
 - Changed motion recording detection to use the full camera frame instead of marked zones or save cooldown logic.
+- Added motion-recording hysteresis: separate continue threshold, minimum recording duration, and longer no-motion delay to produce near-continuous archive fragments.
