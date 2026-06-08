@@ -8,7 +8,6 @@ namespace CentralServer.Services;
 public sealed class MotionDetectionService
 {
     private readonly Dictionary<string, float[]> _previousFrames = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, DateTime> _lastSavedByCamera = new(StringComparer.OrdinalIgnoreCase);
 
     public bool HasMotion(
         RemoteCameraState camera,
@@ -55,13 +54,6 @@ public sealed class MotionDetectionService
             return false;
         }
 
-        if (_lastSavedByCamera.TryGetValue(camera.CameraKey, out var lastSavedUtc) &&
-            DateTime.UtcNow - lastSavedUtc < TimeSpan.FromSeconds(options.SaveCooldownSeconds))
-        {
-            return false;
-        }
-
-        _lastSavedByCamera[camera.CameraKey] = DateTime.UtcNow;
         return true;
     }
 }

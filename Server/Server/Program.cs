@@ -5,6 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.WebHost.UseUrls(builder.Configuration["Runtime:BaseUrl"] ?? "http://localhost:5101");
 builder.Services.Configure<ServerNodeOptions>(builder.Configuration.GetSection("ServerNode"));
+builder.Services.Configure<RecordingOptions>(builder.Configuration.GetSection("Recording"));
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 builder.Services.AddCors(options =>
@@ -19,6 +20,7 @@ builder.Services.AddSingleton<ConnectorBindingService>();
 builder.Services.AddSingleton<CameraConfigurationService>();
 builder.Services.AddSingleton<CameraSecretsService>();
 builder.Services.AddSingleton<CameraRtspAddressService>();
+builder.Services.AddSingleton<CameraRecordingService>();
 
 var app = builder.Build();
 

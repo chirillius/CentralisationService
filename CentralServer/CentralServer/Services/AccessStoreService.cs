@@ -6,6 +6,7 @@ using CentralisationService.Entities.Models.Access;
 using CentralisationService.Entities.Models.Catalog;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace CentralServer.Services;
 
@@ -315,7 +316,7 @@ public sealed class AccessStoreService
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("company_id", companyId);
         command.Parameters.AddWithValue("site_key", siteKey.Trim());
-        command.Parameters.AddWithValue("existing_source_camera_key", (object?)existingSourceCameraKey ?? DBNull.Value);
+        command.Parameters.Add("existing_source_camera_key", NpgsqlDbType.Text).Value = (object?)existingSourceCameraKey ?? DBNull.Value;
         command.Parameters.AddWithValue("source_camera_key", sourceCameraKey);
         command.Parameters.AddWithValue("global_camera_key", globalCameraKey);
         command.Parameters.AddWithValue("name", request.Name.Trim());

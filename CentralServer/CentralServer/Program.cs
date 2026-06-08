@@ -26,6 +26,7 @@ builder.Services.AddCors(options =>
     });
 });
 builder.Services.AddHttpClient(nameof(RemoteFrameProxyService));
+builder.Services.AddHttpClient(nameof(RemoteRecordingService));
 builder.Services.AddHttpClient(nameof(ServerRegistryService));
 builder.Services.AddSingleton(PostgreSqlDataSourceFactory.Create(builder.Configuration));
 builder.Services.AddHostedService<PostgreSqlSchemaInitializer>();
@@ -35,6 +36,7 @@ builder.Services.AddSingleton<MotionDetectionService>();
 builder.Services.AddSingleton<MotionFrameIndexService>();
 builder.Services.AddSingleton<CentralArchivePathService>();
 builder.Services.AddSingleton<MotionFrameArchiveService>();
+builder.Services.AddSingleton<RemoteRecordingService>();
 builder.Services.AddSingleton<ZoneCatalogService>();
 builder.Services.AddSingleton<RetailDetectionProfileCatalogService>();
 builder.Services.AddSingleton<NeuroRetailAnalysisService>();

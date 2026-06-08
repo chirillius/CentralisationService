@@ -19,7 +19,10 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Filters stores, cameras, archive, zones, and detection settings by authenticated company context.
 - Proxies camera frames through `Server`.
 - Runs motion detection on central frames.
-- Saves motion video fragments centrally under `company/<companyKey>/<siteKey>/videos/<yyyy-MM-dd>/<cameraName>/videos/`.
+- Starts and stops remote RTSP recording sessions on site-side `Server` when motion appears/disappears anywhere in the full camera frame.
+- Keeps motion recording independent from marked zones; zones remain available for detection/business-rule scenarios.
+- Downloads completed remote motion `.mp4` fragments from `Server` and saves them centrally under `company/<companyKey>/<siteKey>/videos/<yyyy-MM-dd>/<cameraName>/videos/`.
+- Splits long continuous motion recordings by configurable max duration so fragments are available for analysis without waiting indefinitely.
 - Exposes archive item list and archive file download endpoints with image/video content type support.
 - Stores zone names in PostgreSQL.
 - Stores zones and polygon points in PostgreSQL and supports zone CRUD through CentralServer APIs.
@@ -74,11 +77,14 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Keeps backward compatibility with legacy `Address` and `StreamAddress` camera settings.
 - Uses low-quality stream path for frame preview by default.
 - Supports camera add/update/delete endpoints protected by `X-Connector-Token`.
+- Supports protected local RTSP recording start/stop/status/download endpoints for cameras.
+- Records camera video fragments locally near the camera network and exposes completed `.mp4` files for `CentralServer` download.
+- Applies a configurable max recording duration to prevent endless local recordings.
 - Supports registration from `CentralServer` through `/api/connector/register`.
 - Stores local company/site binding in `Configuration/connector-binding.json`.
 - Stores only connector access token hash locally.
 - Requires `X-Connector-Token` for camera and connector info access after binding.
-- Remains transport-only and does not run analytics, archive writing, incident creation, or Neuro calls.
+- Remains transport-only and does not run analytics, incident creation, or Neuro calls.
 
 ### Client
 
@@ -104,6 +110,7 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Allows company administrators to add, edit, and delete cameras from point settings.
 - Hides point/camera/zone management actions from company operators.
 - Supports zone markup UI on a last captured frame.
+- Supports separate zone viewing, hiding, and explicit edit mode in zone markup UI.
 - Hides company-side zone settings from users without `zones.manage`.
 - Supports model profile settings UI inside point settings.
 - Shows motion archive data from `CentralServer`.
@@ -137,7 +144,7 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Zone-dependent detection direction was preserved.
 - Client-zone presence as a condition for checks was preserved.
 - Motion/evidence frame saving was recreated in centralized form.
-- Motion video fragment saving was adapted from the old ffmpeg recording idea into the centralized architecture.
+- Motion video fragment recording was adapted from the old ffmpeg recording idea: recording now happens on site-side `Server`, while `CentralServer` controls sessions and downloads files centrally.
 - Server-side ffmpeg frame capture was reused conceptually.
 
 ### From CentralServerWeb
@@ -315,3 +322,8 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Added Server camera add/update/delete endpoints that persist public camera settings into `appsettings.json`.
 - Added platform-admin and company-admin camera management flows in point settings.
 - Hid point/camera/zone management actions from company operators.
+- Improved zone markup visuals and changed saved-zone editing to start only from the right-side zone list.
+- Added protected Server-side RTSP recording API for motion fragments.
+- Changed CentralServer motion monitoring to record while motion continues, stop after configurable no-motion delay, and split by configurable max duration.
+- Added CentralServer download of completed remote `.mp4` recordings into the company/site central archive.
+- Changed motion recording detection to use the full camera frame instead of marked zones or save cooldown logic.

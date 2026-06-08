@@ -83,6 +83,40 @@ public sealed class MotionFrameArchiveService
         }
     }
 
+    public async Task<string> SaveRemoteRecordingAsync(
+        RemoteCameraState camera,
+        RemoteRecordingDto recording,
+        byte[] videoBytes,
+        CancellationToken cancellationToken)
+    {
+        var startedAtUtc = recording.StartedAtUtc == default ? DateTime.UtcNow : recording.StartedAtUtc;
+        var startedAtLocal = startedAtUtc.ToLocalTime();
+        var stoppedAtLocal = (recording.StoppedAtUtc ?? DateTime.UtcNow).ToLocalTime();
+        var directoryPath = _pathService.BuildMotionVideoDirectory(_options.VideosRootPath, camera, startedAtLocal);
+        Directory.CreateDirectory(directoryPath);
+
+        var fileName = $"{startedAtLocal:HH-mm-ss.fff}_{stoppedAtLocal:HH-mm-ss.fff}.mp4";
+        var fullPath = Path.Combine(directoryPath, fileName);
+        await File.WriteAllBytesAsync(fullPath, videoBytes, cancellationToken);
+
+        var relativePath = _pathService.ToRelativePath(_options.VideosRootPath, fullPath);
+        _indexService.Add(new MotionFrameRecord
+        {
+            CameraKey = camera.CameraKey,
+            CameraName = camera.CameraName,
+            CompanyKey = camera.CompanyKey,
+            SiteKey = camera.SiteKey,
+            SiteName = camera.SiteName,
+            RelativePath = relativePath,
+            FileName = fileName,
+            PublicUrl = $"/api/archive/frame/{Uri.EscapeDataString(relativePath)}",
+            CapturedAtUtc = startedAtUtc,
+        });
+
+        _logger.LogInformation("Saved remote motion recording to {Path}", fullPath);
+        return fullPath;
+    }
+
     private static async Task SaveSequenceFrameAsync(
         string tempDirectory,
         int frameIndex,
