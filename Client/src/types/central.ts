@@ -16,6 +16,9 @@ export type CameraDto = {
   siteName: string;
   cameraId: number | null;
   sourceCameraKey: string;
+  host: string;
+  highQualityPath: string;
+  lowQualityPath: string;
   serverBaseUrl: string;
   lastSyncUtc: string;
   isAvailable: boolean;
@@ -84,6 +87,9 @@ export type CompanySiteDto = {
     cameraKey: string;
     sourceCameraKey: string;
     cameraName: string;
+    host: string;
+    highQualityPath: string;
+    lowQualityPath: string;
     isAvailable: boolean;
   }>;
 };

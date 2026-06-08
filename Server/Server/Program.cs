@@ -16,6 +16,9 @@ builder.Services.AddCors(options =>
 });
 builder.Services.AddSingleton<FfmpegFrameGrabber>();
 builder.Services.AddSingleton<ConnectorBindingService>();
+builder.Services.AddSingleton<CameraConfigurationService>();
+builder.Services.AddSingleton<CameraSecretsService>();
+builder.Services.AddSingleton<CameraRtspAddressService>();
 
 var app = builder.Build();
 

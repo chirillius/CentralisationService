@@ -3,15 +3,14 @@ import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSetting
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeleteIcon from '@mui/icons-material/Delete';
 import GroupRoundedIcon from '@mui/icons-material/GroupRounded';
 import RadioButtonCheckedRoundedIcon from '@mui/icons-material/RadioButtonCheckedRounded';
 import StorefrontIcon from '@mui/icons-material/Storefront';
-import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, Paper, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, Paper, Typography } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import CentralZoneConfigurator from '../components/stores/CentralZoneConfigurator';
+import SiteSettingsDialog from '../components/stores/SiteSettingsDialog';
 import { useAppStore } from '../store';
 import { PAGE_CONTENT_MAX_WIDTH, UI_RADIUS_PX } from '../theme/designTokens';
 import type { CameraDto, StoreDto } from '../types/central';
@@ -221,15 +220,19 @@ const StoresPage = () => {
                       </Button>
                       {canManageZones ? (
                         <Button variant="outlined" startIcon={<AdminPanelSettingsRoundedIcon />} onClick={() => setZoneSettingsOpen(true)} disabled={!currentStore.isAvailable}>
-                          Открыть настройку зон
+                          Настройка точки
                         </Button>
                       ) : null}
-                      <Button variant="outlined" startIcon={<AddBusinessRoundedIcon />} onClick={() => showAlert('Информация', 'UI добавления магазина будет подключаться отдельным этапом, когда central catalog перейдёт с appsettings на API+persistence.')}>
-                        Добавить магазин
-                      </Button>
-                      <Button variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => showAlert('Информация', 'Удаление магазина пока не подключено к CentralServer API, раздел оставлен визуально.')}>
-                        Удалить магазин
-                      </Button>
+                      {canManageZones ? (
+                        <>
+                          <Button variant="outlined" startIcon={<AddBusinessRoundedIcon />} onClick={() => showAlert('Информация', 'UI добавления магазина будет подключаться отдельным этапом, когда central catalog перейдёт с appsettings на API+persistence.')}>
+                            Добавить магазин
+                          </Button>
+                          <Button variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => showAlert('Информация', 'Удаление магазина пока не подключено к CentralServer API, раздел оставлен визуально.')}>
+                            Удалить магазин
+                          </Button>
+                        </>
+                      ) : null}
                     </Box>
                   </Box>
                 ) : (
@@ -243,50 +246,23 @@ const StoresPage = () => {
         )}
       </Box>
 
-      <Dialog
+      {currentStore ? (
+        <SiteSettingsDialog
         open={Boolean(currentStore && zoneSettingsOpen)}
         onClose={() => setZoneSettingsOpen(false)}
-        fullWidth
-        maxWidth="xl"
-        sx={{
-          '& .MuiDialog-paper': {
-            minHeight: { md: '84vh' },
-            background: 'linear-gradient(145deg, rgba(2,6,23,0.98), rgba(15,23,42,0.96))',
-            border: '1px solid rgba(148,163,184,0.18)',
-          },
+        title={`Настройка точки: ${currentStore.siteName}`}
+        subtitle="Камеры и разметка зон настраиваются через CentralServer. В адресе камеры указывается только IP/host, логин и пароль остаются локально на Server."
+        baseUrl={baseUrl}
+        cameras={currentStoreCameras}
+        cameraEndpoint={`/api/cameras/sites/${encodeURIComponent(currentStore.siteKey)}`}
+        canManage={canManageZones}
+        request={authorizedFetch}
+        onChanged={async () => {
+          await loadCameras(currentStore.siteKey);
+          await loadStores();
         }}
-      >
-        <DialogTitle
-          sx={{
-            px: { xs: 2, md: 3 },
-            py: 2,
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: 2,
-          }}
-        >
-          <Box>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>
-              Настройка зон
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, maxWidth: 820 }}>
-              {currentStore
-                ? `Разметка для магазина ${currentStore.siteName} открыта в отдельном окне поверх списка магазинов. Используется один последний кадр камеры с ручным обновлением.`
-                : 'Разметка зон открывается поверх текущей страницы, как в исходном клиенте.'}
-            </Typography>
-          </Box>
-          <IconButton onClick={() => setZoneSettingsOpen(false)} aria-label="Закрыть окно настройки зон">
-            <CloseRoundedIcon />
-          </IconButton>
-        </DialogTitle>
-
-        <DialogContent sx={{ px: { xs: 2, md: 3 }, pb: { xs: 2, md: 3 }, pt: 0 }}>
-          {currentStore ? (
-            <CentralZoneConfigurator baseUrl={baseUrl} cameras={currentStoreCameras} />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      />
+      ) : null}
     </Box>
   );
 };

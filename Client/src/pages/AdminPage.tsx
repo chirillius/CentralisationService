@@ -34,7 +34,7 @@ import {
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import CentralZoneConfigurator from '../components/stores/CentralZoneConfigurator';
+import SiteSettingsDialog from '../components/stores/SiteSettingsDialog';
 import { useAppStore } from '../store';
 import { PAGE_CONTENT_MAX_WIDTH, UI_RADIUS_PX } from '../theme/designTokens';
 import type {
@@ -159,6 +159,9 @@ const AdminPage = () => {
       serverBaseUrl: selectedSite.serverBaseUrl,
       lastSyncUtc: selectedSite.lastSyncUtc,
       isAvailable: camera.isAvailable,
+      host: camera.host,
+      highQualityPath: camera.highQualityPath,
+      lowQualityPath: camera.lowQualityPath,
     }));
   }, [selectedSite]);
 
@@ -635,9 +638,9 @@ const AdminPage = () => {
                           variant="contained"
                           startIcon={<MapRoundedIcon />}
                           onClick={() => setZoneSettingsOpen(true)}
-                          disabled={!selectedSite.isAvailable || selectedSite.cameras.length === 0}
+                          disabled={!selectedSite.isAvailable}
                         >
-                          Разметить зоны точки
+                          Настройка точки
                         </Button>
                         <Box>
                           <Typography variant="h6" sx={{ fontWeight: 800, mb: 1.2 }}>Камеры</Typography>
@@ -649,7 +652,7 @@ const AdminPage = () => {
                                     <CameraAltRoundedIcon color="primary" />
                                     <Box>
                                       <Typography sx={{ fontWeight: 750 }}>{camera.cameraName}</Typography>
-                                      <Typography variant="caption" color="text.secondary">{camera.cameraKey}</Typography>
+                                      <Typography variant="caption" color="text.secondary">{camera.host || 'host не указан'} · {camera.cameraKey}</Typography>
                                     </Box>
                                   </Stack>
                                   <Chip size="small" label={camera.isAvailable ? 'Доступна' : 'Нет кадра'} color={camera.isAvailable ? 'success' : 'warning'} variant="outlined" />
@@ -747,34 +750,22 @@ const AdminPage = () => {
         )}
       </Box>
 
-      <Dialog
-        open={Boolean(selectedSite && zoneSettingsOpen)}
-        onClose={() => setZoneSettingsOpen(false)}
-        fullWidth
-        maxWidth="xl"
-        sx={{
-          '& .MuiDialog-paper': {
-            minHeight: { md: '84vh' },
-            background: 'linear-gradient(145deg, rgba(2,6,23,0.98), rgba(15,23,42,0.96))',
-            border: '1px solid rgba(148,163,184,0.18)',
-          },
-        }}
-      >
-        <DialogTitle sx={{ px: { xs: 2, md: 3 }, py: 2, display: 'flex', justifyContent: 'space-between', gap: 2 }}>
-          <Box>
-            <Typography variant="h5" sx={{ fontWeight: 800 }}>Разметка зон точки</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-              {selectedSite ? `${selectedSite.siteName}: настройка зон открыта из админской панели.` : 'Настройка зон точки.'}
-            </Typography>
-          </Box>
-          <IconButton onClick={() => setZoneSettingsOpen(false)} aria-label="Закрыть окно настройки зон">
-            <CloseRoundedIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent sx={{ px: { xs: 2, md: 3 }, pb: { xs: 2, md: 3 }, pt: 0 }}>
-          {selectedSite ? <CentralZoneConfigurator baseUrl={baseUrl} cameras={selectedSiteCameras} accessMode="platform" /> : null}
-        </DialogContent>
-      </Dialog>
+      {selectedCompany && selectedSite ? (
+        <SiteSettingsDialog
+          open={Boolean(selectedSite && zoneSettingsOpen)}
+          onClose={() => setZoneSettingsOpen(false)}
+          title={`Настройка точки: ${selectedSite.siteName}`}
+          subtitle="Админская настройка камер и зон точки. В адресе камеры указывается только IP/host, учетные данные камеры хранятся локально на Server."
+          baseUrl={baseUrl}
+          cameras={selectedSiteCameras}
+          cameraEndpoint={`/api/platform/companies/${selectedCompany.id}/sites/${encodeURIComponent(selectedSite.siteKey)}/cameras`}
+          canManage
+          request={platformAuthorizedFetch}
+          onChanged={async () => {
+            await loadCompanyDetails(selectedCompany.id);
+          }}
+        />
+      ) : null}
 
       <Dialog open={Boolean(selectedAccount)} onClose={() => setSelectedAccount(null)} fullWidth maxWidth="md">
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'flex-start' }}>

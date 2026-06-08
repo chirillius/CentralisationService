@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using CentralServer.Models;
 using CentralServer.Services;
 
 namespace CentralServer.Controllers;
@@ -8,14 +10,20 @@ namespace CentralServer.Controllers;
 public sealed class ArchiveController : ControllerBase
 {
     private readonly MotionFrameIndexService _indexService;
-    private readonly IWebHostEnvironment _environment;
     private readonly CompanyAccessContextService _accessContextService;
+    private readonly CentralArchivePathService _pathService;
+    private readonly MotionMonitoringOptions _options;
 
-    public ArchiveController(MotionFrameIndexService indexService, IWebHostEnvironment environment, CompanyAccessContextService accessContextService)
+    public ArchiveController(
+        MotionFrameIndexService indexService,
+        CompanyAccessContextService accessContextService,
+        CentralArchivePathService pathService,
+        IOptions<MotionMonitoringOptions> options)
     {
         _indexService = indexService;
-        _environment = environment;
         _accessContextService = accessContextService;
+        _pathService = pathService;
+        _options = options.Value;
     }
 
     [HttpGet("frames")]
@@ -24,7 +32,7 @@ public sealed class ArchiveController : ControllerBase
         var normalizedTake = Math.Clamp(take, 1, 100);
         var company = _accessContextService.RequireCurrent();
         return Ok(_indexService.GetRecent(cameraKey, normalizedTake)
-            .Where(record => record.SiteKey.StartsWith($"{company.CompanyKey}-", StringComparison.OrdinalIgnoreCase)));
+            .Where(record => string.Equals(record.CompanyKey, company.CompanyKey, StringComparison.OrdinalIgnoreCase)));
     }
 
     [HttpGet("frame/{**relativePath}")]
@@ -40,12 +48,24 @@ public sealed class ArchiveController : ControllerBase
             return NotFound(new { message = "Кадр движения не найден." });
         }
 
-        var fullPath = Path.Combine(_environment.ContentRootPath, "videos", record.RelativePath.Replace("/", Path.DirectorySeparatorChar.ToString()));
+        var fullPath = _pathService.BuildFullPathFromRelative(_options.VideosRootPath, record.RelativePath);
         if (!System.IO.File.Exists(fullPath))
         {
             return NotFound(new { message = "Файл кадра движения отсутствует на диске." });
         }
 
-        return PhysicalFile(fullPath, "image/jpeg");
+        return PhysicalFile(fullPath, ResolveContentType(fullPath));
+    }
+
+    private static string ResolveContentType(string fullPath)
+    {
+        return Path.GetExtension(fullPath).ToLowerInvariant() switch
+        {
+            ".mp4" => "video/mp4",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".json" => "application/json",
+            _ => "application/octet-stream",
+        };
     }
 }

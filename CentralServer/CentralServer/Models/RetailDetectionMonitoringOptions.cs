@@ -6,5 +6,5 @@ public sealed class RetailDetectionMonitoringOptions
     public int NeuroTimeoutSeconds { get; set; } = 15;
     public string NeuroBaseUrl { get; set; } = "http://localhost:5300";
     public string ProfilesFileName { get; set; } = "detection_profiles.json";
-    public string VideosRootPath { get; set; } = "videos";
+    public string VideosRootPath { get; set; } = "company";
 }

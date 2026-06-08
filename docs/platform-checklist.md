@@ -19,13 +19,15 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Filters stores, cameras, archive, zones, and detection settings by authenticated company context.
 - Proxies camera frames through `Server`.
 - Runs motion detection on central frames.
-- Saves motion JPEG frames centrally under `videos/<yyyy-MM-dd>/<cameraName>/`.
-- Exposes archive frame list and archive frame download endpoints.
+- Saves motion video fragments centrally under `company/<companyKey>/<siteKey>/videos/<yyyy-MM-dd>/<cameraName>/videos/`.
+- Exposes archive item list and archive file download endpoints with image/video content type support.
 - Stores zone names in PostgreSQL.
 - Stores zones and polygon points in PostgreSQL and supports zone CRUD through CentralServer APIs.
 - Stores retail detection profiles and model parameters in PostgreSQL.
 - Runs centralized retail detection background monitoring.
 - Calls `Neuro` for retail scene analysis.
+- Saves clean detection evidence images under `company/<companyKey>/<siteKey>/defects/<yyyy-MM-dd>/<defectName>/images/`.
+- Saves sidecar JSON metadata for evidence images, including company/site/camera/profile data and detected object ROI boxes.
 - Saves test evidence frames when a person is present in the client zone.
 - Supports multi-tenant company access with companies, accounts, grants, invitations, sessions, and platform admin sessions.
 - Supports platform admin login through `/api/platform/auth/login`.
@@ -42,6 +44,8 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Uses `X-Connector-Token` for bound `CentralServer -> Server` transport calls.
 - Stores connector transport token metadata in PostgreSQL so protected site-side calls survive CentralServer restarts.
 - Supports platform-admin camera frame proxying for site settings.
+- Supports platform-admin camera add/update/delete flow through CentralServer with propagation to site-side Server.
+- Stores public camera host and high/low stream paths in PostgreSQL without camera credentials.
 - Supports platform-admin zone CRUD for zone markup from admin site settings.
 - Has unit tests for access/session behavior.
 
@@ -60,12 +64,16 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 ### Server
 
 - Runs as weak site-side connector.
-- Stores local camera configuration in `appsettings.json`.
+- Stores local public camera configuration in `appsettings.json`.
+- Stores camera login/password locally in ignored `Configuration/camera-secrets.json`.
 - Exposes connector information through `/api/connector/info`.
 - Exposes camera metadata through `/api/cameras`.
 - Exposes JPEG frame capture through `/api/cameras/{cameraKey}/frame`.
 - Captures frames through `ffmpeg`.
-- Uses `StreamAddress` when provided; otherwise uses `Address`.
+- Supports safe camera configuration by `Host`, `HighQualityPath`, and `LowQualityPath`.
+- Keeps backward compatibility with legacy `Address` and `StreamAddress` camera settings.
+- Uses low-quality stream path for frame preview by default.
+- Supports camera add/update/delete endpoints protected by `X-Connector-Token`.
 - Supports registration from `CentralServer` through `/api/connector/register`.
 - Stores local company/site binding in `Configuration/connector-binding.json`.
 - Stores only connector access token hash locally.
@@ -90,7 +98,11 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Shows store list for the authenticated company.
 - Allows selecting active store.
 - Shows camera streaming/preview through `CentralServer`.
+- Fits camera frames fully inside preview containers without cropping.
 - Opens point settings as an overlay on the stores page.
+- Point settings contain camera management and zone markup tabs.
+- Allows company administrators to add, edit, and delete cameras from point settings.
+- Hides point/camera/zone management actions from company operators.
 - Supports zone markup UI on a last captured frame.
 - Hides company-side zone settings from users without `zones.manage`.
 - Supports model profile settings UI inside point settings.
@@ -111,6 +123,7 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Allows selecting invitation role: administrator or operator.
 - Allows closing active invitation tokens from admin UI.
 - Allows marking zones from the selected site settings in admin UI.
+- Allows adding, editing, and deleting cameras from admin selected site settings.
 - Shows repeated access errors as one centered Russian notification instead of repeatedly restarting page loading.
 - Requires a correct site display name when binding a new site-side `Server`.
 
@@ -124,6 +137,7 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Zone-dependent detection direction was preserved.
 - Client-zone presence as a condition for checks was preserved.
 - Motion/evidence frame saving was recreated in centralized form.
+- Motion video fragment saving was adapted from the old ffmpeg recording idea into the centralized architecture.
 - Server-side ffmpeg frame capture was reused conceptually.
 
 ### From CentralServerWeb
@@ -177,7 +191,7 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Add API for viewing and revoking active company user sessions.
 - Add real incident pipeline and incident persistence.
 - Add business state machine for customer presence, phone, bottle, and future detections.
-- Add video clip archive, not only motion JPEG frames.
+- Add archive index rebuild on startup for saved video fragments and evidence files.
 - Add retention policy for archive/evidence files.
 - Add health/status endpoints for all background services.
 - Add tests for server binding and platform admin endpoints.
@@ -287,3 +301,17 @@ Update it after every functional change in `CentralServer`, `Server`, `Neuro`, `
 - Added more specific admin UI diagnostics for failed company detail sections: points, users, or invitations.
 - Added clearer platform-admin company status display for active, suspended, disabled, and archived companies.
 - Added platform-admin company deletion with explicit confirmation and PostgreSQL cascade cleanup.
+
+### 2026-06-08
+
+- Changed CentralServer archive storage to split files by company and site under `company/<companyKey>/<siteKey>/`.
+- Changed central motion archive output from single JPEG frames to short `.mp4` video fragments encoded by `ffmpeg`.
+- Added clean defect evidence image storage under `defects/<date>/<defectName>/images`.
+- Added sidecar JSON evidence metadata with company, site, camera, detection profile, and object ROI boxes.
+- Updated archive file serving to support `.mp4` content type.
+- Changed camera preview and zone-markup frame rendering to fit the full frame without cropping.
+- Added safe camera configuration with host-only camera address in CentralServer/UI and local camera credentials on Server.
+- Added high-quality and low-quality stream path fields for each camera.
+- Added Server camera add/update/delete endpoints that persist public camera settings into `appsettings.json`.
+- Added platform-admin and company-admin camera management flows in point settings.
+- Hid point/camera/zone management actions from company operators.

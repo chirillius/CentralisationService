@@ -378,7 +378,7 @@ const CentralZoneConfigurator = ({
               </Box>
             ) : frameUrl ? (
               <>
-                <Box component="img" src={frameUrl} alt="Последний кадр камеры" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <Box component="img" src={frameUrl} alt="Последний кадр камеры" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: '#020617' }} />
                 <svg ref={overlayRef} className="zone-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" onClick={handleOverlayClick} onPointerMove={handleOverlayPointerMove} onPointerUp={handleOverlayPointerUp}>
                   {zones.map((zone) => (
                     <polygon

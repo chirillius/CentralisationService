@@ -6,6 +6,8 @@ public sealed class MotionFrameRecord
 
     public required string CameraName { get; init; }
 
+    public required string CompanyKey { get; init; }
+
     public required string SiteKey { get; init; }
 
     public required string SiteName { get; init; }

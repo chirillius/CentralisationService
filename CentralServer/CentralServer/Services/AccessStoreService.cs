@@ -165,6 +165,9 @@ public sealed class AccessStoreService
                 camera.global_camera_key,
                 camera.source_camera_key,
                 camera.name AS camera_name,
+                camera.host,
+                camera.high_quality_path,
+                camera.low_quality_path,
                 server.base_url,
                 COALESCE(server.connector_access_token, '') AS connector_access_token,
                 COALESCE(camera.last_seen_at_utc, camera.updated_at_utc) AS last_sync_at_utc,
@@ -193,14 +196,196 @@ public sealed class AccessStoreService
                 SourceCameraKey = reader.GetString(4),
                 CameraId = int.TryParse(reader.GetString(4), out var cameraId) ? cameraId : null,
                 CameraName = reader.GetString(5),
-                ServerBaseUrl = reader.GetString(6),
-                ConnectorAccessToken = reader.GetString(7),
-                LastSyncUtc = reader.GetDateTime(8),
-                IsAvailable = reader.GetBoolean(9),
+                Host = reader.GetString(6),
+                HighQualityPath = reader.GetString(7),
+                LowQualityPath = reader.GetString(8),
+                ServerBaseUrl = reader.GetString(9),
+                ConnectorAccessToken = reader.GetString(10),
+                LastSyncUtc = reader.GetDateTime(11),
+                IsAvailable = reader.GetBoolean(12),
             });
         }
 
         return result;
+    }
+
+    public async Task<RemoteCameraState?> UpsertCompanyCameraAsync(
+        Guid companyId,
+        string siteKey,
+        CameraConfigurationRequest request,
+        string? existingSourceCameraKey,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSeededAsync(cancellationToken);
+        var sourceCameraKey = NormalizeCameraKey(request.Key, request.Name);
+        var globalCameraKey = $"{siteKey}:{sourceCameraKey}";
+        const string sql = """
+            WITH target AS (
+                SELECT
+                    company.id AS company_id,
+                    company.key AS company_key,
+                    site.id AS site_id,
+                    site.key AS site_key,
+                    site.name AS site_name,
+                    server.id AS server_node_id,
+                    server.base_url,
+                    COALESCE(server.connector_access_token, '') AS connector_access_token
+                FROM platform.companies company
+                JOIN catalog.sites site ON site.company_id = company.id AND site.key = @site_key
+                JOIN catalog.server_nodes server ON server.site_id = site.id AND server.is_enabled = true
+                WHERE company.id = @company_id
+                ORDER BY server.updated_at_utc DESC
+                LIMIT 1
+            ),
+            updated AS (
+                UPDATE catalog.cameras camera
+                SET
+                    source_camera_key = @source_camera_key,
+                    global_camera_key = @global_camera_key,
+                    name = @name,
+                    host = @host,
+                    high_quality_path = @high_quality_path,
+                    low_quality_path = @low_quality_path,
+                    is_enabled = true,
+                    updated_at_utc = @now
+                FROM target
+                WHERE camera.company_id = target.company_id
+                  AND camera.site_id = target.site_id
+                  AND camera.server_node_id = target.server_node_id
+                  AND @existing_source_camera_key IS NOT NULL
+                  AND camera.source_camera_key = @existing_source_camera_key
+                RETURNING camera.*
+            ),
+            inserted AS (
+                INSERT INTO catalog.cameras (
+                    company_id,
+                    site_id,
+                    server_node_id,
+                    source_camera_key,
+                    global_camera_key,
+                    name,
+                    host,
+                    high_quality_path,
+                    low_quality_path,
+                    is_enabled,
+                    last_seen_at_utc,
+                    updated_at_utc
+                )
+                SELECT
+                    target.company_id,
+                    target.site_id,
+                    target.server_node_id,
+                    @source_camera_key,
+                    @global_camera_key,
+                    @name,
+                    @host,
+                    @high_quality_path,
+                    @low_quality_path,
+                    true,
+                    @now,
+                    @now
+                FROM target
+                WHERE NOT EXISTS (SELECT 1 FROM updated)
+                ON CONFLICT (server_node_id, source_camera_key) DO UPDATE SET
+                    global_camera_key = EXCLUDED.global_camera_key,
+                    name = EXCLUDED.name,
+                    host = EXCLUDED.host,
+                    high_quality_path = EXCLUDED.high_quality_path,
+                    low_quality_path = EXCLUDED.low_quality_path,
+                    is_enabled = true,
+                    updated_at_utc = EXCLUDED.updated_at_utc
+                RETURNING catalog.cameras.*
+            )
+            SELECT
+                target.company_key,
+                target.site_key,
+                target.site_name,
+                COALESCE((SELECT global_camera_key FROM updated), (SELECT global_camera_key FROM inserted)) AS global_camera_key,
+                COALESCE((SELECT source_camera_key FROM updated), (SELECT source_camera_key FROM inserted)) AS source_camera_key,
+                COALESCE((SELECT name FROM updated), (SELECT name FROM inserted)) AS camera_name,
+                COALESCE((SELECT host FROM updated), (SELECT host FROM inserted)) AS host,
+                COALESCE((SELECT high_quality_path FROM updated), (SELECT high_quality_path FROM inserted)) AS high_quality_path,
+                COALESCE((SELECT low_quality_path FROM updated), (SELECT low_quality_path FROM inserted)) AS low_quality_path,
+                target.base_url,
+                target.connector_access_token
+            FROM target;
+            """;
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("site_key", siteKey.Trim());
+        command.Parameters.AddWithValue("existing_source_camera_key", (object?)existingSourceCameraKey ?? DBNull.Value);
+        command.Parameters.AddWithValue("source_camera_key", sourceCameraKey);
+        command.Parameters.AddWithValue("global_camera_key", globalCameraKey);
+        command.Parameters.AddWithValue("name", request.Name.Trim());
+        command.Parameters.AddWithValue("host", request.Host.Trim());
+        command.Parameters.AddWithValue("high_quality_path", NormalizeStreamPath(request.HighQualityPath, "/Streaming/Channels/101"));
+        command.Parameters.AddWithValue("low_quality_path", NormalizeStreamPath(request.LowQualityPath, "/Streaming/Channels/102"));
+        command.Parameters.AddWithValue("now", DateTime.UtcNow);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new RemoteCameraState
+        {
+            CompanyKey = reader.GetString(0),
+            SiteKey = reader.GetString(1),
+            SiteName = reader.GetString(2),
+            CameraKey = reader.GetString(3),
+            SourceCameraKey = reader.GetString(4),
+            CameraId = int.TryParse(reader.GetString(4), out var cameraId) ? cameraId : request.Id,
+            CameraName = reader.GetString(5),
+            Host = reader.GetString(6),
+            HighQualityPath = reader.GetString(7),
+            LowQualityPath = reader.GetString(8),
+            ServerBaseUrl = reader.GetString(9),
+            ConnectorAccessToken = reader.GetString(10),
+            LastSyncUtc = DateTime.UtcNow,
+            IsAvailable = true,
+        };
+    }
+
+    public async Task<RemoteCameraState?> GetCompanyCameraAsync(
+        Guid companyId,
+        string siteKey,
+        string sourceCameraKey,
+        CancellationToken cancellationToken)
+    {
+        var cameras = await GetCompanyCamerasAsync(companyId, cancellationToken);
+        return cameras.FirstOrDefault(camera =>
+            string.Equals(camera.SiteKey, siteKey, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(camera.SourceCameraKey, sourceCameraKey, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public async Task<bool> DeleteCompanyCameraAsync(
+        Guid companyId,
+        string siteKey,
+        string sourceCameraKey,
+        CancellationToken cancellationToken)
+    {
+        await EnsureSeededAsync(cancellationToken);
+        const string sql = """
+            UPDATE catalog.cameras camera
+            SET is_enabled = false, updated_at_utc = @now
+            FROM catalog.sites site
+            WHERE camera.company_id = @company_id
+              AND camera.site_id = site.id
+              AND site.key = @site_key
+              AND camera.source_camera_key = @source_camera_key
+              AND camera.is_enabled = true;
+            """;
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("company_id", companyId);
+        command.Parameters.AddWithValue("site_key", siteKey.Trim());
+        command.Parameters.AddWithValue("source_camera_key", sourceCameraKey.Trim());
+        command.Parameters.AddWithValue("now", DateTime.UtcNow);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     public async Task<CompanySiteBinding> UpsertCompanySiteAsync(CompanySiteBinding site, CancellationToken cancellationToken)
@@ -821,8 +1006,21 @@ public sealed class AccessStoreService
     {
         await EnsureSeededAsync(cancellationToken);
         const string sql = """
-            INSERT INTO catalog.cameras (company_id, site_id, server_node_id, source_camera_key, global_camera_key, name, is_enabled, last_seen_at_utc, updated_at_utc)
-            SELECT company.id, site.id, server.id, @source_camera_key, @global_camera_key, @name, true, @now, @now
+            INSERT INTO catalog.cameras (
+                company_id,
+                site_id,
+                server_node_id,
+                source_camera_key,
+                global_camera_key,
+                name,
+                host,
+                high_quality_path,
+                low_quality_path,
+                is_enabled,
+                last_seen_at_utc,
+                updated_at_utc
+            )
+            SELECT company.id, site.id, server.id, @source_camera_key, @global_camera_key, @name, @host, @high_quality_path, @low_quality_path, true, @now, @now
             FROM platform.companies company
             JOIN catalog.sites site ON site.company_id = company.id AND site.key = @site_key
             JOIN catalog.server_nodes server ON server.site_id = site.id AND server.base_url = @server_base_url
@@ -830,6 +1028,9 @@ public sealed class AccessStoreService
             ON CONFLICT (server_node_id, source_camera_key) DO UPDATE SET
                 global_camera_key = EXCLUDED.global_camera_key,
                 name = EXCLUDED.name,
+                host = EXCLUDED.host,
+                high_quality_path = EXCLUDED.high_quality_path,
+                low_quality_path = EXCLUDED.low_quality_path,
                 is_enabled = true,
                 last_seen_at_utc = EXCLUDED.last_seen_at_utc,
                 updated_at_utc = EXCLUDED.updated_at_utc;
@@ -845,9 +1046,41 @@ public sealed class AccessStoreService
             command.Parameters.AddWithValue("source_camera_key", camera.SourceCameraKey);
             command.Parameters.AddWithValue("global_camera_key", camera.CameraKey);
             command.Parameters.AddWithValue("name", camera.CameraName);
+            command.Parameters.AddWithValue("host", camera.Host);
+            command.Parameters.AddWithValue("high_quality_path", camera.HighQualityPath);
+            command.Parameters.AddWithValue("low_quality_path", camera.LowQualityPath);
             command.Parameters.AddWithValue("now", DateTime.UtcNow);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
+    }
+
+    private static string NormalizeCameraKey(string? key, string name)
+    {
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            return key.Trim();
+        }
+
+        var builder = new StringBuilder();
+        foreach (var character in name.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(character);
+            }
+            else if (builder.Length > 0 && builder[^1] != '-')
+            {
+                builder.Append('-');
+            }
+        }
+
+        return builder.Length == 0 ? $"camera-{Guid.NewGuid():N}"[..15] : builder.ToString().Trim('-');
+    }
+
+    private static string NormalizeStreamPath(string? value, string fallback)
+    {
+        var path = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        return path.StartsWith('/') ? path : $"/{path}";
     }
 
     public static string HashToken(string token) =>

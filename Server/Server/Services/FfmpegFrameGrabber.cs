@@ -8,11 +8,16 @@ public sealed class FfmpegFrameGrabber
 {
     private readonly ServerNodeOptions _options;
     private readonly ILogger<FfmpegFrameGrabber> _logger;
+    private readonly CameraRtspAddressService _rtspAddressService;
 
-    public FfmpegFrameGrabber(IOptions<ServerNodeOptions> options, ILogger<FfmpegFrameGrabber> logger)
+    public FfmpegFrameGrabber(
+        IOptions<ServerNodeOptions> options,
+        ILogger<FfmpegFrameGrabber> logger,
+        CameraRtspAddressService rtspAddressService)
     {
         _options = options.Value;
         _logger = logger;
+        _rtspAddressService = rtspAddressService;
     }
 
     public async Task<byte[]> CaptureFrameAsync(CameraSource camera, CancellationToken cancellationToken)
@@ -21,11 +26,12 @@ public sealed class FfmpegFrameGrabber
 
         try
         {
+            var captureAddress = await _rtspAddressService.ResolveAddressAsync(camera, CameraStreamQuality.Low, cancellationToken);
             var startInfo = new ProcessStartInfo
             {
                 FileName = _options.FfmpegPath,
                 Arguments =
-                    $"-y -rtsp_transport tcp -i \"{camera.ResolveCaptureAddress()}\" -frames:v 1 -q:v 2 \"{tempFilePath}\"",
+                    $"-y -rtsp_transport tcp -i \"{captureAddress}\" -frames:v 1 -q:v 2 \"{tempFilePath}\"",
                 RedirectStandardError = true,
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
@@ -47,7 +53,7 @@ public sealed class FfmpegFrameGrabber
             if (process.ExitCode != 0 || !File.Exists(tempFilePath))
             {
                 throw new InvalidOperationException(
-                    $"ffmpeg could not capture a frame for camera '{camera.Name}'. {stderr}".Trim());
+                    $"ffmpeg не смог получить кадр камеры '{camera.Name}'. {SanitizeFfmpegOutput(stderr)}".Trim());
             }
 
             return await File.ReadAllBytesAsync(tempFilePath, cancellationToken);
@@ -64,5 +70,14 @@ public sealed class FfmpegFrameGrabber
                 File.Delete(tempFilePath);
             }
         }
+    }
+
+    private static string SanitizeFfmpegOutput(string value)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(
+            value,
+            @"rtsp://([^:\s/]+):([^@\s/]+)@",
+            "rtsp://***:***@",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 }

@@ -176,6 +176,9 @@ public sealed class PlatformCompaniesController : ControllerBase
                     camera.CameraKey,
                     camera.SourceCameraKey,
                     camera.CameraName,
+                    camera.Host,
+                    camera.HighQualityPath,
+                    camera.LowQualityPath,
                     IsAvailable = runtimeServer?.IsAvailable == true && camera.IsAvailable,
                 }),
             };
@@ -263,6 +266,88 @@ public sealed class PlatformCompaniesController : ControllerBase
             binding.CreatedAtUtc,
             binding.UpdatedAtUtc,
         });
+    }
+
+    [HttpPost("{companyId:guid}/sites/{siteKey}/cameras")]
+    public async Task<IActionResult> AddCamera(Guid companyId, string siteKey, [FromBody] CameraConfigurationRequest request, CancellationToken cancellationToken)
+    {
+        if (!await IsPlatformAdminAsync(cancellationToken))
+        {
+            return Unauthorized(new { code = "platform_admin_required" });
+        }
+
+        var validation = await ValidateCameraMutationAsync(companyId, siteKey, request, cancellationToken);
+        if (validation.Result is not null)
+        {
+            return validation.Result;
+        }
+
+        var serverCamera = await PushCameraToServerAsync(validation.Site!, request, existingCameraKey: null, cancellationToken);
+        if (serverCamera.Result is not null)
+        {
+            return serverCamera.Result;
+        }
+
+        var saved = await _accessStoreService.UpsertCompanyCameraAsync(companyId, siteKey, ToRequest(serverCamera.Camera!), existingSourceCameraKey: null, cancellationToken);
+        await _registryService.RefreshAsync(cancellationToken);
+        return Ok(ToCameraResponse(saved ?? serverCamera.Camera!));
+    }
+
+    [HttpPut("{companyId:guid}/sites/{siteKey}/cameras/{cameraKey}")]
+    public async Task<IActionResult> UpdateCamera(Guid companyId, string siteKey, string cameraKey, [FromBody] CameraConfigurationRequest request, CancellationToken cancellationToken)
+    {
+        if (!await IsPlatformAdminAsync(cancellationToken))
+        {
+            return Unauthorized(new { code = "platform_admin_required" });
+        }
+
+        var validation = await ValidateCameraMutationAsync(companyId, siteKey, request, cancellationToken);
+        if (validation.Result is not null)
+        {
+            return validation.Result;
+        }
+
+        var serverCamera = await PushCameraToServerAsync(validation.Site!, request, cameraKey, cancellationToken);
+        if (serverCamera.Result is not null)
+        {
+            return serverCamera.Result;
+        }
+
+        var saved = await _accessStoreService.UpsertCompanyCameraAsync(companyId, siteKey, ToRequest(serverCamera.Camera!), cameraKey, cancellationToken);
+        await _registryService.RefreshAsync(cancellationToken);
+        return Ok(ToCameraResponse(saved ?? serverCamera.Camera!));
+    }
+
+    [HttpDelete("{companyId:guid}/sites/{siteKey}/cameras/{cameraKey}")]
+    public async Task<IActionResult> DeleteCamera(Guid companyId, string siteKey, string cameraKey, CancellationToken cancellationToken)
+    {
+        if (!await IsPlatformAdminAsync(cancellationToken))
+        {
+            return Unauthorized(new { code = "platform_admin_required" });
+        }
+
+        var company = await _accessStoreService.GetCompanyAsync(companyId, cancellationToken);
+        if (company is null)
+        {
+            return NotFound(new { code = "company_not_found", message = "Компания не найдена." });
+        }
+
+        var site = (await _accessStoreService.GetCompanySitesAsync(companyId, cancellationToken))
+            .FirstOrDefault(item => string.Equals(item.SiteKey, siteKey, StringComparison.OrdinalIgnoreCase));
+        if (site is null)
+        {
+            return NotFound(new { code = "site_not_found", message = "Точка не найдена." });
+        }
+
+        var deleteResult = await DeleteCameraFromServerAsync(site, cameraKey, cancellationToken);
+        if (deleteResult is not null)
+        {
+            return deleteResult;
+        }
+
+        await _accessStoreService.DeleteCompanyCameraAsync(companyId, siteKey, cameraKey, cancellationToken);
+        await _registryService.RefreshAsync(cancellationToken);
+        return NoContent();
     }
 
     [HttpGet("{companyId:guid}/accounts")]
@@ -427,6 +512,159 @@ public sealed class PlatformCompaniesController : ControllerBase
         return authorization.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
             ? authorization[prefix.Length..].Trim()
             : null;
+    }
+
+    private async Task<(IActionResult? Result, CompanySiteBinding? Site)> ValidateCameraMutationAsync(
+        Guid companyId,
+        string siteKey,
+        CameraConfigurationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var company = await _accessStoreService.GetCompanyAsync(companyId, cancellationToken);
+        if (company is null)
+        {
+            return (NotFound(new { code = "company_not_found", message = "Компания не найдена." }), null);
+        }
+
+        if (!await _accessStoreService.IsCompanyActiveAsync(companyId, cancellationToken))
+        {
+            return (StatusCode(StatusCodes.Status403Forbidden, new { code = "company_unavailable", message = "Компания недоступна." }), null);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return (BadRequest(new { code = "camera_name_required", message = "Нужно указать название камеры." }), null);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Host))
+        {
+            return (BadRequest(new { code = "camera_host_required", message = "Нужно указать IP-адрес или host камеры без логина и пароля." }), null);
+        }
+
+        if (request.Host.Contains('@') || request.Host.StartsWith("rtsp://", StringComparison.OrdinalIgnoreCase))
+        {
+            return (BadRequest(new { code = "camera_host_must_not_contain_credentials", message = "В настройках камеры нужно указать только IP или host, без RTSP, логина и пароля." }), null);
+        }
+
+        var site = (await _accessStoreService.GetCompanySitesAsync(companyId, cancellationToken))
+            .FirstOrDefault(item => string.Equals(item.SiteKey, siteKey, StringComparison.OrdinalIgnoreCase));
+        if (site is null)
+        {
+            return (NotFound(new { code = "site_not_found", message = "Точка не найдена." }), null);
+        }
+
+        return (null, site);
+    }
+
+    private async Task<(IActionResult? Result, RemoteCameraState? Camera)> PushCameraToServerAsync(
+        CompanySiteBinding site,
+        CameraConfigurationRequest request,
+        string? existingCameraKey,
+        CancellationToken cancellationToken)
+    {
+        var client = _httpClientFactory.CreateClient(nameof(PlatformCompaniesController));
+        if (!string.IsNullOrWhiteSpace(site.ConnectorAccessToken))
+        {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-Connector-Token", site.ConnectorAccessToken);
+        }
+
+        var url = existingCameraKey is null
+            ? $"{site.ServerBaseUrl.TrimEnd('/')}/api/cameras"
+            : $"{site.ServerBaseUrl.TrimEnd('/')}/api/cameras/{Uri.EscapeDataString(existingCameraKey)}";
+        using var response = existingCameraKey is null
+            ? await client.PostAsJsonAsync(url, request, cancellationToken)
+            : await client.PutAsJsonAsync(url, request, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (StatusCode(StatusCodes.Status502BadGateway, new
+            {
+                code = "server_camera_configuration_failed",
+                message = "Не удалось сохранить камеру на Server точки.",
+                status = (int)response.StatusCode,
+            }), null);
+        }
+
+        var serverCamera = await response.Content.ReadFromJsonAsync<RemoteServerCameraDto>(cancellationToken);
+        if (serverCamera is null)
+        {
+            return (StatusCode(StatusCodes.Status502BadGateway, new
+            {
+                code = "server_camera_configuration_empty_response",
+                message = "Server точки вернул пустой ответ при сохранении камеры.",
+            }), null);
+        }
+
+        return (null, new RemoteCameraState
+        {
+            CompanyKey = site.CompanyKey,
+            SiteKey = site.SiteKey,
+            SiteName = site.SiteName,
+            CameraKey = $"{site.SiteKey}:{serverCamera.Key}",
+            SourceCameraKey = serverCamera.Key,
+            CameraId = serverCamera.Id,
+            CameraName = serverCamera.Name,
+            Host = serverCamera.Host,
+            HighQualityPath = serverCamera.HighQualityPath,
+            LowQualityPath = serverCamera.LowQualityPath,
+            ServerBaseUrl = site.ServerBaseUrl,
+            ConnectorAccessToken = site.ConnectorAccessToken,
+            LastSyncUtc = DateTime.UtcNow,
+            IsAvailable = true,
+        });
+    }
+
+    private async Task<IActionResult?> DeleteCameraFromServerAsync(
+        CompanySiteBinding site,
+        string cameraKey,
+        CancellationToken cancellationToken)
+    {
+        var client = _httpClientFactory.CreateClient(nameof(PlatformCompaniesController));
+        if (!string.IsNullOrWhiteSpace(site.ConnectorAccessToken))
+        {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-Connector-Token", site.ConnectorAccessToken);
+        }
+
+        using var response = await client.DeleteAsync(
+            $"{site.ServerBaseUrl.TrimEnd('/')}/api/cameras/{Uri.EscapeDataString(cameraKey)}",
+            cancellationToken);
+
+        return response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NotFound
+            ? null
+            : StatusCode(StatusCodes.Status502BadGateway, new
+            {
+                code = "server_camera_delete_failed",
+                message = "Не удалось удалить камеру на Server точки.",
+                status = (int)response.StatusCode,
+            });
+    }
+
+    private static CameraConfigurationRequest ToRequest(RemoteCameraState camera)
+    {
+        return new CameraConfigurationRequest
+        {
+            Id = camera.CameraId,
+            Key = camera.SourceCameraKey,
+            Name = camera.CameraName,
+            Host = camera.Host,
+            HighQualityPath = camera.HighQualityPath,
+            LowQualityPath = camera.LowQualityPath,
+        };
+    }
+
+    private static object ToCameraResponse(RemoteCameraState camera)
+    {
+        return new
+        {
+            camera.CameraId,
+            camera.CameraKey,
+            camera.SourceCameraKey,
+            camera.CameraName,
+            camera.Host,
+            camera.HighQualityPath,
+            camera.LowQualityPath,
+            camera.IsAvailable,
+        };
     }
 
     private static string NormalizeServerBaseUrl(string serverAddress)

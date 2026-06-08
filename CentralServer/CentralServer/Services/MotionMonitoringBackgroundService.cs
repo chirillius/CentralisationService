@@ -48,7 +48,11 @@ public sealed class MotionMonitoringBackgroundService : BackgroundService
 
                     if (_motionDetectionService.HasMotion(camera, frameBytes, _options, out var delta))
                     {
-                        await _archiveService.SaveFrameAsync(camera, frameBytes, stoppingToken);
+                        await _archiveService.SaveVideoFragmentAsync(
+                            camera,
+                            frameBytes,
+                            token => _frameProxyService.GetFrameAsync(camera, token),
+                            stoppingToken);
                         _logger.LogInformation(
                             "Motion detected for camera {CameraName} with delta {Delta:F2}",
                             camera.CameraName,

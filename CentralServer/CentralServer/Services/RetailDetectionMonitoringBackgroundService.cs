@@ -128,6 +128,7 @@ public sealed class RetailDetectionMonitoringBackgroundService : BackgroundServi
                         frameBytes,
                         new SavedDetectionEvidenceMetadata
                         {
+                            CompanyKey = camera.CompanyKey,
                             SiteKey = camera.SiteKey,
                             SiteName = camera.SiteName,
                             CameraKey = camera.CameraKey,
@@ -138,6 +139,7 @@ public sealed class RetailDetectionMonitoringBackgroundService : BackgroundServi
                             ClientZoneHasPeople = analysisResponse.ClientZoneHasPeople,
                             IsSimulated = analysisResponse.IsSimulated,
                             Note = analysisResponse.Note,
+                            Objects = BuildEvidenceObjects(profile, analysisResponse),
                         },
                         cancellationToken);
 
@@ -249,5 +251,34 @@ public sealed class RetailDetectionMonitoringBackgroundService : BackgroundServi
         return string.Equals(profile.DetectionTypeKey, "client-presence-test", StringComparison.OrdinalIgnoreCase)
             ? "client-presence-test"
             : $"{profile.DetectionTypeKey}-test";
+    }
+
+    private static IReadOnlyList<SavedDetectionObjectMetadata> BuildEvidenceObjects(
+        ConfiguredRetailDetectionProfile profile,
+        RetailSceneAnalysisResponse response)
+    {
+        var detection = response.Detections.FirstOrDefault(
+            item => string.Equals(item.DetectionTypeKey, profile.DetectionTypeKey, StringComparison.OrdinalIgnoreCase));
+
+        if (detection is null || detection.BoundingBoxes.Count == 0)
+        {
+            return Array.Empty<SavedDetectionObjectMetadata>();
+        }
+
+        return detection.BoundingBoxes
+            .Select(bounds => new SavedDetectionObjectMetadata
+            {
+                DetectionTypeKey = detection.DetectionTypeKey,
+                Label = detection.EvidenceLabel,
+                Confidence = detection.Confidence,
+                Bounds = new SavedDetectionBoundsMetadata
+                {
+                    X = bounds.X,
+                    Y = bounds.Y,
+                    Width = bounds.Width,
+                    Height = bounds.Height,
+                },
+            })
+            .ToArray();
     }
 }

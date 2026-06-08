@@ -5,15 +5,21 @@ namespace Server.Models;
 
 public sealed class CameraSource
 {
-    public int? Id { get; init; }
+    public int? Id { get; set; }
 
-    public string? Key { get; init; }
+    public string? Key { get; set; }
 
-    public required string Name { get; init; }
+    public required string Name { get; set; }
 
-    public required string Address { get; init; }
+    public string Address { get; set; } = string.Empty;
 
-    public string? StreamAddress { get; init; }
+    public string? StreamAddress { get; set; }
+
+    public string? Host { get; set; }
+
+    public string HighQualityPath { get; set; } = "/Streaming/Channels/101";
+
+    public string LowQualityPath { get; set; } = "/Streaming/Channels/102";
 
     public string ResolveKey()
     {
@@ -45,4 +51,24 @@ public sealed class CameraSource
 
     public string ResolveCaptureAddress() =>
         string.IsNullOrWhiteSpace(StreamAddress) ? Address : StreamAddress;
+
+    public string ResolveHost()
+    {
+        if (!string.IsNullOrWhiteSpace(Host))
+        {
+            return Host.Trim();
+        }
+
+        return TryExtractHost(StreamAddress) ?? TryExtractHost(Address) ?? string.Empty;
+    }
+
+    private static string? TryExtractHost(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address) || !Uri.TryCreate(address, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        return uri.Host;
+    }
 }

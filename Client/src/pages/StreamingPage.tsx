@@ -161,7 +161,7 @@ const StreamingPage = () => {
                   component="img"
                   src={previewUrl}
                   alt={selectedCamera.name}
-                  sx={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', borderRadius: '18px', border: '1px solid rgba(148,163,184,0.14)', background: '#020617' }}
+                  sx={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'contain', borderRadius: '18px', border: '1px solid rgba(148,163,184,0.14)', background: '#020617' }}
                 />
                 <Box>
                   <Typography variant="h6" sx={{ fontWeight: 800 }}>{selectedCamera.name}</Typography>

@@ -11,14 +11,14 @@ public sealed class RetailDetectionEvidenceArchiveService
     };
 
     private readonly RetailDetectionMonitoringOptions _options;
-    private readonly IWebHostEnvironment _environment;
+    private readonly CentralArchivePathService _pathService;
 
     public RetailDetectionEvidenceArchiveService(
         Microsoft.Extensions.Options.IOptions<RetailDetectionMonitoringOptions> options,
-        IWebHostEnvironment environment)
+        CentralArchivePathService pathService)
     {
         _options = options.Value;
-        _environment = environment;
+        _pathService = pathService;
     }
 
     public async Task<string> SaveAsync(
@@ -29,24 +29,16 @@ public sealed class RetailDetectionEvidenceArchiveService
         CancellationToken cancellationToken)
     {
         var capturedAt = metadata.CapturedAtUtc == default ? DateTime.UtcNow : metadata.CapturedAtUtc;
-        var root = Path.Combine(_environment.ContentRootPath, _options.VideosRootPath);
-        var directory = Path.Combine(root, capturedAt.ToString("yyyy-MM-dd"), SanitizeSegment(camera.CameraName), "detections", SanitizeSegment(reasonKey));
+        var directory = _pathService.BuildDefectImagesDirectory(_options.VideosRootPath, camera, capturedAt, reasonKey);
         Directory.CreateDirectory(directory);
 
-        var fileStem = $"{capturedAt:HH-mm-ss-fff}_{SanitizeSegment(camera.CameraKey)}";
+        var fileStem = $"{capturedAt:HH-mm-ss-fff}_{CentralArchivePathService.SanitizeSegment(camera.CameraKey)}";
         var imagePath = Path.Combine(directory, $"{fileStem}.jpg");
         var metadataPath = Path.Combine(directory, $"{fileStem}.json");
 
         await File.WriteAllBytesAsync(imagePath, frameBytes, cancellationToken);
         await File.WriteAllTextAsync(metadataPath, JsonSerializer.Serialize(metadata, SerializerOptions), cancellationToken);
 
-        return Path.GetRelativePath(_environment.ContentRootPath, imagePath).Replace('\\', '/');
-    }
-
-    private static string SanitizeSegment(string value)
-    {
-        var invalidChars = Path.GetInvalidFileNameChars();
-        var sanitized = new string(value.Select(character => invalidChars.Contains(character) ? '_' : character).ToArray()).Trim();
-        return string.IsNullOrWhiteSpace(sanitized) ? "unknown" : sanitized;
+        return _pathService.ToRelativePath(_options.VideosRootPath, imagePath);
     }
 }

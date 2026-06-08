@@ -44,11 +44,13 @@ pnpm-debug.log*
 **/videos/
 **/Configuration/access/*.json
 **/Configuration/connector-binding.json
+**/Configuration/camera-secrets.json
 **/Configuration/runtime/
 **/*.tmp
 
 # Keep static seed/config templates trackable when explicitly needed.
 !CentralServer/CentralServer/Configuration/access/.gitkeep
+!**/Configuration/*.example.json
 
 # ML model artifacts are large and must not be committed.
 Neuro/Neuro/DNNModels/

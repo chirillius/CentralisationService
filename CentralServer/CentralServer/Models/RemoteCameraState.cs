@@ -16,6 +16,12 @@ public sealed class RemoteCameraState
 
     public required string CameraName { get; init; }
 
+    public string Host { get; init; } = string.Empty;
+
+    public string HighQualityPath { get; init; } = "/Streaming/Channels/101";
+
+    public string LowQualityPath { get; init; } = "/Streaming/Channels/102";
+
     public required string ServerBaseUrl { get; set; }
 
     public string ConnectorAccessToken { get; init; } = string.Empty;

@@ -33,6 +33,7 @@ builder.Services.AddSingleton<ServerRegistryService>();
 builder.Services.AddSingleton<RemoteFrameProxyService>();
 builder.Services.AddSingleton<MotionDetectionService>();
 builder.Services.AddSingleton<MotionFrameIndexService>();
+builder.Services.AddSingleton<CentralArchivePathService>();
 builder.Services.AddSingleton<MotionFrameArchiveService>();
 builder.Services.AddSingleton<ZoneCatalogService>();
 builder.Services.AddSingleton<RetailDetectionProfileCatalogService>();
@@ -59,7 +60,7 @@ app.MapGet("/", () => Results.Ok(new
 {
     service = "CentralisationService.CentralServer",
     processingRule = "all-processing-lives-here",
-    archiveRoot = Path.Combine(app.Environment.ContentRootPath, "videos"),
+    archiveRoot = Path.Combine(app.Environment.ContentRootPath, builder.Configuration["MotionMonitoring:VideosRootPath"] ?? "company"),
 }));
 
 app.Run();

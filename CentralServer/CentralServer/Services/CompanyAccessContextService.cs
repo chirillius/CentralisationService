@@ -23,4 +23,10 @@ public sealed class CompanyAccessContextService
         return siteKey.StartsWith($"{context.CompanyKey}-", StringComparison.OrdinalIgnoreCase)
             || string.Equals(siteKey, context.CompanyKey, StringComparison.OrdinalIgnoreCase);
     }
+
+    public bool HasPermission(string permission)
+    {
+        var context = RequireCurrent();
+        return context.Permissions.Contains(permission);
+    }
 }

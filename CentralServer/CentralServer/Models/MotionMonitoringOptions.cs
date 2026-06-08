@@ -8,7 +8,13 @@ public sealed class MotionMonitoringOptions
 
     public int SaveCooldownSeconds { get; init; } = 8;
 
-    public string VideosRootPath { get; init; } = "videos";
+    public string VideosRootPath { get; init; } = "company";
+
+    public string FfmpegPath { get; init; } = "ffmpeg";
+
+    public int VideoFragmentSeconds { get; init; } = 12;
+
+    public int VideoFrameIntervalMilliseconds { get; init; } = 1000;
 
     public int ThumbnailWidth { get; init; } = 64;
 
