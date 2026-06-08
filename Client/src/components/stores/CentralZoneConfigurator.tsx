@@ -4,7 +4,9 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
-import { Alert, Box, Button, Chip, CircularProgress, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
+import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
+import { Alert, Box, Button, Chip, CircularProgress, IconButton, MenuItem, Paper, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../store';
 import type { CameraDto } from '../../types/central';
@@ -43,6 +45,9 @@ const CentralZoneConfigurator = ({
   const [zones, setZones] = useState<ZoneRecordDto[]>([]);
   const [selectedCameraKey, setSelectedCameraKey] = useState('');
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [highlightedZoneId, setHighlightedZoneId] = useState<string | null>(null);
+  const [hiddenZoneIds, setHiddenZoneIds] = useState<Set<string>>(() => new Set());
+  const [isMarkupActive, setIsMarkupActive] = useState(false);
   const [selectedZoneName, setSelectedZoneName] = useState('');
   const [customZoneName, setCustomZoneName] = useState('');
   const [draftPoints, setDraftPoints] = useState<ZonePointDto[]>([]);
@@ -65,6 +70,10 @@ const CentralZoneConfigurator = ({
   const previewPolygonPoints = useMemo(
     () => draftPoints.map((point) => `${point.x * 100},${point.y * 100}`).join(' '),
     [draftPoints],
+  );
+  const visibleZones = useMemo(
+    () => zones.filter((zone) => !hiddenZoneIds.has(zone.id)),
+    [hiddenZoneIds, zones],
   );
 
   useEffect(() => {
@@ -146,6 +155,9 @@ const CentralZoneConfigurator = ({
         }
         setZones(loadedZones);
         setSelectedZoneId(null);
+        setHighlightedZoneId(null);
+        setHiddenZoneIds(new Set());
+        setIsMarkupActive(false);
         setDraftPoints([]);
       } catch (loadError: any) {
         if (!cancelled) {
@@ -174,17 +186,46 @@ const CentralZoneConfigurator = ({
 
   const beginNewZone = () => {
     setSelectedZoneId(null);
+    setHighlightedZoneId(null);
     setDraftPoints([]);
     setCustomZoneName('');
     setSelectedZoneName(zoneCatalog?.names[0] || customOptionLabel);
+    setIsMarkupActive(true);
   };
 
-  const selectZone = (zone: ZoneRecordDto) => {
+  const resetMarkup = () => {
+    setSelectedZoneId(null);
+    setHighlightedZoneId(null);
+    setDraftPoints([]);
+    setCustomZoneName('');
+    setSelectedZoneName(zoneCatalog?.names[0] || customOptionLabel);
+    setIsMarkupActive(false);
+  };
+
+  const startEditZone = (zone: ZoneRecordDto) => {
     setSelectedZoneId(zone.id);
+    setHighlightedZoneId(zone.id);
     setDraftPoints(zone.points);
     const isKnownName = zoneCatalog?.names.includes(zone.zoneName) ?? false;
     setSelectedZoneName(isKnownName ? zone.zoneName : customOptionLabel);
     setCustomZoneName(isKnownName ? zone.customName ?? '' : zone.displayName);
+    setIsMarkupActive(true);
+  };
+
+  const highlightZone = (zone: ZoneRecordDto) => {
+    setHighlightedZoneId(zone.id);
+  };
+
+  const toggleZoneVisibility = (zoneId: string) => {
+    setHiddenZoneIds((current) => {
+      const next = new Set(current);
+      if (next.has(zoneId)) {
+        next.delete(zoneId);
+      } else {
+        next.add(zoneId);
+      }
+      return next;
+    });
   };
 
   const getOverlayPoint = (clientX: number, clientY: number): ZonePointDto | null => {
@@ -205,7 +246,7 @@ const CentralZoneConfigurator = ({
   };
 
   const handleOverlayClick = (event: React.MouseEvent<SVGSVGElement>) => {
-    if (!frameUrl || draggedPointIndex !== null) {
+    if (!frameUrl || !isMarkupActive || draggedPointIndex !== null) {
       return;
     }
 
@@ -283,7 +324,7 @@ const CentralZoneConfigurator = ({
       const saved = (await response.json()) as ZoneRecordDto;
       const refreshed = await loadZones(selectedCamera.key);
       setZones(refreshed);
-      selectZone(saved);
+      startEditZone(saved);
       showSnackbar('Зона сохранена на CentralServer.');
     } catch (saveError: any) {
       showAlert('Ошибка', saveError?.message ?? 'Не удалось сохранить зону.');
@@ -304,7 +345,7 @@ const CentralZoneConfigurator = ({
       }
       const refreshed = await loadZones(selectedCamera.key);
       setZones(refreshed);
-      beginNewZone();
+      resetMarkup();
       showSnackbar('Зона удалена.');
     } catch (deleteError: any) {
       showAlert('Ошибка', deleteError?.message ?? 'Не удалось удалить зону.');
@@ -362,12 +403,12 @@ const CentralZoneConfigurator = ({
         <Paper variant="outlined" sx={{ p: { xs: 1.25, md: 1.6 }, borderRadius: '14px', display: 'grid', gap: 1.25 }}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
             <Typography variant="body2" color="text.secondary">
-              Клик по кадру добавляет вершину полигона. Точки можно двигать мышью. Сохранённые зоны отображаются поверх этого же фиксированного кадра.
+              Клик по кадру добавляет вершину только в активном режиме разметки. Чтобы изменить сохранённую зону, нажми «Редактировать» в списке справа.
             </Typography>
             <Stack direction="row" spacing={1} flexWrap="wrap">
               <Button variant="outlined" startIcon={<AddRoundedIcon />} onClick={beginNewZone}>Новая зона</Button>
-              <Button variant="outlined" startIcon={<RemoveRoundedIcon />} onClick={() => setDraftPoints((current) => current.slice(0, -1))} disabled={draftPoints.length === 0}>Убрать точку</Button>
-              <Button variant="outlined" startIcon={<RestartAltRoundedIcon />} onClick={() => setDraftPoints([])} disabled={draftPoints.length === 0}>Сбросить</Button>
+              <Button variant="outlined" startIcon={<RemoveRoundedIcon />} onClick={() => setDraftPoints((current) => current.slice(0, -1))} disabled={!isMarkupActive || draftPoints.length === 0}>Убрать точку</Button>
+              <Button variant="outlined" startIcon={<RestartAltRoundedIcon />} onClick={() => setDraftPoints([])} disabled={!isMarkupActive || draftPoints.length === 0}>Сбросить</Button>
             </Stack>
           </Stack>
 
@@ -379,18 +420,39 @@ const CentralZoneConfigurator = ({
             ) : frameUrl ? (
               <>
                 <Box component="img" src={frameUrl} alt="Последний кадр камеры" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: '#020617' }} />
-                <svg ref={overlayRef} className="zone-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" onClick={handleOverlayClick} onPointerMove={handleOverlayPointerMove} onPointerUp={handleOverlayPointerUp}>
-                  {zones.map((zone) => (
-                    <polygon
-                      key={zone.id}
-                      className={zone.id === selectedZoneId ? 'saved-zone is-selected' : 'saved-zone'}
-                      points={zone.points.map((point) => `${point.x * 100},${point.y * 100}`).join(' ')}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        selectZone(zone);
-                      }}
-                    />
-                  ))}
+                <svg ref={overlayRef} className={isMarkupActive ? 'zone-overlay is-editing' : 'zone-overlay'} viewBox="0 0 100 100" preserveAspectRatio="none" onClick={handleOverlayClick} onPointerMove={handleOverlayPointerMove} onPointerUp={handleOverlayPointerUp}>
+                  <defs>
+                    <filter id="zoneGlow" x="-20%" y="-20%" width="140%" height="140%">
+                      <feDropShadow dx="0" dy="0" stdDeviation="0.8" floodColor="#38bdf8" floodOpacity="0.8" />
+                    </filter>
+                    <filter id="zoneSelectedGlow" x="-20%" y="-20%" width="140%" height="140%">
+                      <feDropShadow dx="0" dy="0" stdDeviation="1" floodColor="#22c55e" floodOpacity="0.9" />
+                    </filter>
+                  </defs>
+                  {visibleZones.map((zone) => {
+                    const points = zone.points.map((point) => `${point.x * 100},${point.y * 100}`).join(' ');
+                    const isHighlighted = zone.id === highlightedZoneId;
+                    return (
+                      <g key={zone.id} className="saved-zone-group">
+                        <polygon
+                          className={isHighlighted ? 'saved-zone-fill is-highlighted' : 'saved-zone-fill'}
+                          points={points}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            highlightZone(zone);
+                          }}
+                        />
+                        <polygon
+                          className={isHighlighted ? 'saved-zone-line is-highlighted' : 'saved-zone-line'}
+                          points={points}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            highlightZone(zone);
+                          }}
+                        />
+                      </g>
+                    );
+                  })}
                   {draftPoints.length > 0 ? (
                     <>
                       <polyline className="draft-zone" points={previewPolygonPoints} />
@@ -415,8 +477,10 @@ const CentralZoneConfigurator = ({
             <Chip label={`Точек: ${draftPoints.length}`} color={draftPoints.length >= 3 ? 'success' : 'default'} variant="outlined" />
             {selectedZoneId ? (
               <Chip label="Редактирование сохранённой зоны" color="info" variant="outlined" />
+            ) : isMarkupActive ? (
+              <Chip label="Разметка новой зоны" color="warning" variant="outlined" />
             ) : (
-              <Chip label="Создание новой зоны" color="warning" variant="outlined" />
+              <Chip label="Просмотр зон" color="default" variant="outlined" />
             )}
           </Stack>
 
@@ -434,10 +498,31 @@ const CentralZoneConfigurator = ({
             <Stack spacing={1}>
               {zones.length > 0 ? (
                 zones.map((zone) => (
-                  <Button key={zone.id} variant={zone.id === selectedZoneId ? 'contained' : 'outlined'} onClick={() => selectZone(zone)} sx={{ justifyContent: 'space-between' }}>
-                    <span>{zone.displayName}</span>
-                    <span>{zone.points.length} pts</span>
-                  </Button>
+                  <Paper
+                    key={zone.id}
+                    variant="outlined"
+                    sx={{
+                      p: 1,
+                      borderRadius: '12px',
+                      borderColor: zone.id === highlightedZoneId ? 'rgba(99,102,241,0.85)' : 'rgba(148,163,184,0.18)',
+                      background: zone.id === highlightedZoneId ? 'rgba(99,102,241,0.18)' : 'rgba(15,23,42,0.48)',
+                    }}
+                  >
+                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                      <Button variant="text" onClick={() => highlightZone(zone)} sx={{ justifyContent: 'space-between', flex: 1, minWidth: 0, px: 1 }}>
+                        <span>{zone.displayName}</span>
+                        <span>{zone.points.length} pts</span>
+                      </Button>
+                      <Tooltip title={hiddenZoneIds.has(zone.id) ? 'Показать зону' : 'Скрыть зону'}>
+                        <IconButton size="small" onClick={() => toggleZoneVisibility(zone.id)}>
+                          {hiddenZoneIds.has(zone.id) ? <VisibilityOffRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
+                        </IconButton>
+                      </Tooltip>
+                      <Button size="small" variant={zone.id === selectedZoneId ? 'contained' : 'outlined'} onClick={() => startEditZone(zone)}>
+                        Редактировать
+                      </Button>
+                    </Stack>
+                  </Paper>
                 ))
               ) : (
                 <Alert severity="info">Для этой камеры пока нет сохранённых зон.</Alert>

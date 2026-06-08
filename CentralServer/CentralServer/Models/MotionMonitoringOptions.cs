@@ -6,8 +6,6 @@ public sealed class MotionMonitoringOptions
 
     public double MotionThreshold { get; init; } = 14.0d;
 
-    public int SaveCooldownSeconds { get; init; } = 8;
-
     public string VideosRootPath { get; init; } = "company";
 
     public string FfmpegPath { get; init; } = "ffmpeg";
@@ -15,6 +13,12 @@ public sealed class MotionMonitoringOptions
     public int VideoFragmentSeconds { get; init; } = 12;
 
     public int VideoFrameIntervalMilliseconds { get; init; } = 1000;
+
+    public int StopAfterNoMotionSeconds { get; init; } = 15;
+
+    public int MaxRecordingMinutes { get; init; } = 10;
+
+    public string RecordingStreamQuality { get; init; } = "High";
 
     public int ThumbnailWidth { get; init; } = 64;
 

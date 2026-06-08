@@ -42,6 +42,7 @@ pnpm-debug.log*
 
 # Runtime data and local service state
 **/videos/
+**/recordings/
 **/Configuration/access/*.json
 **/Configuration/connector-binding.json
 **/Configuration/camera-secrets.json
